@@ -76,5 +76,6 @@ setup(
     ],
     scripts=["hgdb-vitis"],
     python_requires=">=3.6",
+    cmdclass={"build_ext": CMakeBuild},
     ext_modules=[CMakeExtension('vitis')],
 )
