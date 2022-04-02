@@ -1,2 +1,60 @@
 #!/usr/bin/env python3
 
+import os
+import argparse
+import pathlib
+import xml.etree.ElementTree as ElementTree
+
+
+class DesignInfo:
+    def __init__(self, solution):
+        self.__solution = solution
+        self.__parse_design_xml()
+        self.top_name = ""
+
+    def __parse_design_xml(self):
+        xml_files = list(pathlib.Path(self.__solution).rglob("*.design.xml"))
+        assert len(xml_files) == 1, "Only one design allowed in the solution"
+        xml_file = xml_files[0]
+        # parse the xml file to build design hierarchy
+        # also set the top name
+        filename = os.path.basename(xml_file)
+        self.top_name = filename.replace(".design.xml", "")
+        tree = ElementTree.parse(xml_file)
+        root = tree.getroot()
+        top_module = root.find("./RTLDesignHierarchy/TopModule")
+        top_module_name = top_module.find("ModuleName").text
+        assert top_module_name == self.top_name, "Design database files corrupted"
+        # recursively figure out the design hierarchy
+        self.design_hierarchy = {}
+        self.__build_instance_hierarchy(top_module_name, top_module)
+
+    def __build_instance_hierarchy(self, parent_name, node):
+        inst_list = node.find("InstancesList")
+        if inst_list is None:
+            return
+        self.design_hierarchy[parent_name] = []
+        for child in inst_list.findall("Instance"):
+            inst_name = child.find("InstName").text
+            module_name = child.find("ModuleName").text
+            self.design_hierarchy[parent_name].append((module_name, inst_name))
+            # recursive call
+            self.__build_instance_hierarchy(module_name, child)
+
+
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("solution", type=str, help="Xilinx Vitis solution dir")
+    parser.add_argument("-o", dest="output", type=str, help="Output symbol table name")
+    args = parser.parse_args()
+    return args
+
+
+def main():
+    args = get_args()
+    solution = args.solution
+    info = DesignInfo(solution)
+
+
+if __name__ == "__main__":
+    main()
