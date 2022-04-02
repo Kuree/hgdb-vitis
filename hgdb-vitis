@@ -3,6 +3,8 @@
 import os
 import argparse
 import pathlib
+import llvmlite.binding
+import llvmlite.ir
 import xml.etree.ElementTree as ElementTree
 
 
@@ -28,6 +30,7 @@ class DesignInfo:
         # recursively figure out the design hierarchy
         self.design_hierarchy = {}
         self.__build_instance_hierarchy(top_module_name, top_module)
+        self.__parse_llvm_bc()
 
     def __build_instance_hierarchy(self, parent_name, node):
         inst_list = node.find("InstancesList")
@@ -40,6 +43,31 @@ class DesignInfo:
             self.design_hierarchy[parent_name].append((module_name, inst_name))
             # recursive call
             self.__build_instance_hierarchy(module_name, child)
+
+    def __parse_llvm_bc(self):
+        # find the nice build with all the debug information
+        g_bc_filename = os.path.join(self.__solution, ".autopilot", "db", self.top_name + ".bc")
+        o3_filename = os.path.join(self.__solution, ".autopilot", "db", "a.o.3.bc")
+        assert os.path.exists(g_bc_filename) and os.path.exists(o3_filename), "Design bitcode not found"
+        with open(g_bc_filename, "rb") as f:
+            bc = f.read()
+            g_bc = llvmlite.binding.parse_bitcode(bc)
+        # optimized build
+        with open(o3_filename, "rb") as f:
+            bc = f.read()
+            oc_bc = llvmlite.binding.parse_bitcode(bc)
+
+        # read out the debug build and figure out the call graph
+        top_func = g_bc.get_function(self.top_name)
+        mod = top_func.module
+        # notice that llvmlite should not be used since the bitcode parsing returns a raw reference, instead
+        # of the actual IR.
+        top_blocks = top_func.blocks
+        for block in top_blocks:
+            block_instructions = block.instructions
+            for inst in block_instructions:
+                if inst.opcode == "call":
+                    pass
 
 
 def get_args():
