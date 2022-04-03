@@ -60,6 +60,12 @@ class DesignInfo:
         self.__o3_bc = vitis.parse_llvm_bitcode(o3_filename)
 
         # read out the debug build and figure out the call graph
+        top_function = self.__g_bc.get_function(self.top_name)
+        assert top_function is not None, "Unable to locate top function in LLVM bitcode"
+        # we need to index locations to function instruction so that once we look at the state transition
+        # we know what function to look at
+        loc_map = top_function.get_instr_loc()
+        print(loc_map)
 
     def __parse_state_transition(self):
         # we only need to parse the state transition for the top module
