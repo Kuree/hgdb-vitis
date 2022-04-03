@@ -1,4 +1,5 @@
 #include "ir.hh"
+
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/SourceMgr.h"
@@ -11,12 +12,22 @@ llvm::LLVMContext *get_llvm_context() {
     return context.get();
 }
 
-std::unique_ptr<ModuleInfo> parse_llvm_bitcode(const std::string &path) {
+std::vector<const llvm::Instruction *> get_function_instructions(const llvm::Module &module,
+                                                                 const std::string &func_name) {
+    auto *function = module.getFunction(func_name);
+    if (!function) return {};
+    std::vector<const llvm::Instruction *> res;
+    res.reserve(function->size());
+    for (auto const &blk : *function) {
+        for (auto const &inst : blk) {
+            res.emplace_back(&inst);
+        }
+    }
+    return res;
+}
+
+std::unique_ptr<llvm::Module> parse_llvm_bitcode(const std::string &path) {
     llvm::SMDiagnostic error;
     auto module = llvm::parseIRFile(path, error, *get_llvm_context());
-    if (module) {
-        return std::make_unique<ModuleInfo>(std::move(module));
-    } else {
-        return nullptr;
-    }
+    return std::move(module);
 }

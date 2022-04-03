@@ -1,13 +1,18 @@
-#include "pybind11/pybind11.h"
 #include "ir.hh"
+#include "pybind11/pybind11.h"
 
 namespace py = pybind11;
 
-void init_structs(py::module &m) {
-    py::class_<ModuleInfo>(m, "ModuleInfo");
+void bind_llvm(py::module &m) {
+    py::class_<llvm::Module>(m, "Module")
+        .def("get_function_instructions", &get_function_instructions,
+             py::return_value_policy::reference);
+
+    py::class_<llvm::Instruction, std::unique_ptr<llvm::Instruction, py::nodelete>>(m,
+                                                                                    "Instruction");
 }
 
 PYBIND11_MODULE(vitis, m) {
-    init_structs(m);
+    bind_llvm(m);
     m.def("parse_llvm_bitcode", &parse_llvm_bitcode);
 }

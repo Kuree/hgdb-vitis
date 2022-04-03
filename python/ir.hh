@@ -5,12 +5,9 @@
 
 #include "llvm/IR/Module.h"
 
-struct ModuleInfo {
-    // wrapper for LLVM IRs so we don't have to create binding for LLVM types
-    explicit ModuleInfo(std::unique_ptr<llvm::Module> &&m): module(std::move(m)) {}
-    std::unique_ptr<llvm::Module> module;
-};
+std::vector<const llvm::Instruction *> get_function_instructions(const llvm::Module &module,
+                                                                 const std::string &func_name);
 
-std::unique_ptr<ModuleInfo> parse_llvm_bitcode(const std::string &path);
+std::unique_ptr<llvm::Module> parse_llvm_bitcode(const std::string &path);
 
-#endif //HGDB_VITIS_IR_HH
+#endif  // HGDB_VITIS_IR_HH

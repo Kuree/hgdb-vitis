@@ -4,7 +4,7 @@ import os
 import argparse
 import pathlib
 import llvmlite.binding
-import llvmlite.ir
+import vitis
 import xml.etree.ElementTree as ElementTree
 
 
@@ -52,22 +52,15 @@ class DesignInfo:
         with open(g_bc_filename, "rb") as f:
             bc = f.read()
             g_bc = llvmlite.binding.parse_bitcode(bc)
-        # optimized build
-        with open(o3_filename, "rb") as f:
-            bc = f.read()
-            oc_bc = llvmlite.binding.parse_bitcode(bc)
+        g_bc = vitis.parse_llvm_bitcode(g_bc_filename)
+        o3_bc = vitis.parse_llvm_bitcode(o3_filename)
 
         # read out the debug build and figure out the call graph
-        top_func = g_bc.get_function(self.top_name)
-        mod = top_func.module
-        # notice that llvmlite should not be used since the bitcode parsing returns a raw reference, instead
-        # of the actual IR.
-        top_blocks = top_func.blocks
-        for block in top_blocks:
-            block_instructions = block.instructions
-            for inst in block_instructions:
-                if inst.opcode == "call":
-                    pass
+
+    def __parse_state_transition(self):
+        # we only need to parse the state transition for the top module
+        # since everything is statically scheduled
+        pass
 
 
 def get_args():
