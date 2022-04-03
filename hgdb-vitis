@@ -64,8 +64,7 @@ class DesignInfo:
         assert top_function is not None, "Unable to locate top function in LLVM bitcode"
         # we need to index locations to function instruction so that once we look at the state transition
         # we know what function to look at
-        loc_map = top_function.get_instr_loc()
-        print(loc_map)
+        self.__loc_map = top_function.get_instr_loc()
 
     def __parse_state_transition(self):
         # we only need to parse the state transition for the top module
@@ -86,7 +85,8 @@ class DesignInfo:
                 break
         current_state = None
         state_num_re = re.compile(r"State(?P<id>\s\d+)")
-        state_instr_re = re.compile(r"ST_\d+\s+:\s+[\w\s\[\]\(\)\/\.]+--->\s+\"(?P<instr>[\w\%\_\s=\@\.,]+)\"\s+(\[(?P<debug>.*)\])?\s+--->") # noqa
+        state_instr_re = re.compile(
+            r"ST_\d+\s+:\s+[\w\s\[\]()/\.]+--->\s+\"(?P<instr>[\w%_\s=@\.,]+)\"\s+(\[(?P<debug>.*)])?\s+--->")
         for line in rpt_lines:
             m = state_num_re.search(line)
             if m is not None:
@@ -102,6 +102,44 @@ class DesignInfo:
                     instr = m.group("instr")
                     debug = m.group("debug")
                     current_state.instructions.append((instr, debug))
+
+    def __get_state_related_instr(self, state_id):
+        # based on locations annotated in the state report. Notice that the location information is also messed up
+        # due to function inlining
+        instructions = self.state_info[state_id].instructions
+        res = []
+        line_info = set()
+        for instr, debug in instructions:
+            if debug is None:
+                continue
+            # decode filename and line
+            line_idx = debug.rindex(":")
+            filename = debug[:line_idx]
+            line_num = int(debug[line_idx + 1:])
+
+            if filename in self.__loc_map and line_num in self.__loc_map[filename]:
+                # we only need one instruction for that line
+                entry = (filename, line_num)
+                if entry in line_info:
+                    continue
+                line_info.add(entry)
+                instr = self.__loc_map[filename][line_num][0]
+
+                res.append(instr)
+
+        return res
+
+    def __compute_variable_mapping(self):
+        # this is to deal with completely messed up symbol mapping in Vitis. In addition, the final optimized
+        # bitcode does not contain valid debug information. reached out to Vitis team. waiting for any response.
+
+        # we use the following algorithm
+        # for each state, we go to the corresponding line (using debug bitcode), get the variable declaration
+        # from the debug bitcode and then try to match it with the optimized build. If there is any match, we have
+        # to look around IR to see the actual name of the signal. This can be accomplished via readout out the
+        # variable usage
+
+        pass
 
 
 def get_args():
