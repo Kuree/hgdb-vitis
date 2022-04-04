@@ -12,6 +12,15 @@ class StateInfo:
     def __init__(self, state_id: int):
         self.id = state_id
         self.instructions = []
+        self.instance = None
+
+
+class InstanceInfo:
+    def __init__(self, module_name, instance_name):
+        self.module_name = module_name
+        self.instance_name = instance_name
+        self.optimized_function = None
+        self.debug_function = None
 
 
 class DesignInfo:
@@ -38,6 +47,7 @@ class DesignInfo:
         self.__build_instance_hierarchy(top_module_name, top_module)
         self.__parse_llvm_bc()
         self.__parse_state_transition()
+        self.__compute_variable_mapping()
 
     def __build_instance_hierarchy(self, parent_name, node):
         inst_list = node.find("InstancesList")
@@ -47,7 +57,7 @@ class DesignInfo:
         for child in inst_list.findall("Instance"):
             inst_name = child.find("InstName").text
             module_name = child.find("ModuleName").text
-            self.design_hierarchy[parent_name].append((module_name, inst_name))
+            self.design_hierarchy[parent_name].append(InstanceInfo(module_name, inst_name))
             # recursive call
             self.__build_instance_hierarchy(module_name, child)
 
@@ -65,6 +75,20 @@ class DesignInfo:
         # we need to index locations to function instruction so that once we look at the state transition
         # we know what function to look at
         self.__loc_map = top_function.get_instr_loc()
+        g_function_names = top_function.get_contained_functions()
+        # need to establish mapping from the debug build to the optimized build
+        # notice that we don't know the logic of how labeled basic block gets transformed into a function inside
+        # Vitis (it's not open-sourced). As a result, we have to get creative
+        self.__optimized_function_mapping = self.__o3_bc.get_optimized_functions(g_function_names)
+        # need to compute the demangled name, which is the instance name
+        for name, func in self.__optimized_function_mapping.items():
+            module_name = func.demangled_name
+            # maybe optimize the search
+            for instances in self.design_hierarchy.values():
+                for inst in instances:
+                    if inst.module_name == module_name:
+                        inst.optimized_function = func
+                        inst.debug_function = self.__g_bc.get_function(name)
 
     def __parse_state_transition(self):
         # we only need to parse the state transition for the top module
@@ -101,7 +125,35 @@ class DesignInfo:
                 if m is not None:
                     instr = m.group("instr")
                     debug = m.group("debug")
+                    if debug is not None:
+                        line_idx = debug.rindex(":")
+                        filename = debug[:line_idx]
+                        line_num = int(debug[line_idx + 1:])
+                        debug = (filename, line_num)
                     current_state.instructions.append((instr, debug))
+
+        # match state with instance
+        for state_id, state_info in self.state_info.items():
+            instrs = self.__get_state_related_instr(state_id)
+            if len(instrs) == 0:
+                continue
+            # use the first one
+            instr = instrs[0]
+            debug_function_name = instr.function.name
+            assert debug_function_name in self.__optimized_function_mapping, "Debug function not found"
+            o3_function = self.__optimized_function_mapping[debug_function_name]
+            # FIXME: we don't know which instance this actually mapped to. Need to find a way for proper
+            #   mapping. for now we assume one-to-one mapping
+            module_name = o3_function.name
+            done = False
+            for instance_infos in self.design_hierarchy.values():
+                if done:
+                    break
+                for instance_info in instance_infos:
+                    if instance_info.module_name == module_name:
+                        state_info.instance = instance_info
+                        done = True
+                        break
 
     def __get_state_related_instr(self, state_id):
         # based on locations annotated in the state report. Notice that the location information is also messed up
@@ -109,14 +161,11 @@ class DesignInfo:
         instructions = self.state_info[state_id].instructions
         res = []
         line_info = set()
-        for instr, debug in instructions:
+        for _, debug in instructions:
             if debug is None:
                 continue
             # decode filename and line
-            line_idx = debug.rindex(":")
-            filename = debug[:line_idx]
-            line_num = int(debug[line_idx + 1:])
-
+            filename, line_num = debug
             if filename in self.__loc_map and line_num in self.__loc_map[filename]:
                 # we only need one instruction for that line
                 entry = (filename, line_num)
@@ -138,8 +187,16 @@ class DesignInfo:
         # from the debug bitcode and then try to match it with the optimized build. If there is any match, we have
         # to look around IR to see the actual name of the signal. This can be accomplished via readout out the
         # variable usage
+        for state_id, state_info in self.state_info.items():
+            instructions = self.__get_state_related_instr(state_id)
+            for instr in instructions:
+                # due to the transformation, we may not find a direct matching instruction
+                # we use the alloc instruction, which remains regardless the optimization
+                alloc = instr.prev_alloc
+                # notice that this is from the debug build!
+                # if the code is SSA-transformed, which I think it is, the allocation should be unique
 
-        pass
+
 
 
 def get_args():

@@ -6,6 +6,7 @@
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/Instructions.h"
 #include <unordered_set>
+#include <cxxabi.h>
 
 llvm::LLVMContext *get_llvm_context() {
     static std::unique_ptr<llvm::LLVMContext> context;
@@ -76,6 +77,87 @@ get_instr_loc(const llvm::Function *function) {
     std::unordered_set<const llvm::Function *> visited;
     index_function(result, visited, function);
     return result;
+}
+
+// NOLINTNEXTLINE
+void get_contained_functions(const llvm::Function *function, std::set<std::string> &res) {
+    if (!function) return;
+    for (auto const &blk: *function) {
+        for (auto const &inst: blk) {
+            if (llvm::isa<llvm::CallInst>(inst)) {
+                auto const &call = llvm::cast<llvm::CallInst>(inst);
+                // recursive call
+                auto *func = call.getCalledFunction();
+                if (!func) continue;
+                auto name = func->getName().str();
+                if (res.find(name) == res.end()) {
+                    res.emplace(name);
+                    get_contained_functions(func, res);
+                }
+            }
+        }
+    }
+}
+
+std::set<std::string> get_contained_functions(const llvm::Function *function) {
+    std::set<std::string> res;
+    get_contained_functions(function, res);
+    return res;
+}
+
+std::map<std::string, const llvm::Function *>
+get_optimized_functions(const llvm::Module *module, const std::set<std::string> &function_names) {
+    // use the fact that all transformed basic blocks as original function name's label with .exit
+    std::map<std::string, const llvm::Function *> res;
+    std::unordered_map<std::string, std::string> processed_names;
+    for (auto const &func: function_names) {
+        processed_names.emplace(func, func + ".exit");
+    }
+    auto const &functions = module->getFunctionList();
+    for (auto const &function: functions) {
+        for (auto const &block: function) {
+            auto name = block.getName().str();
+            for (auto const &[func_name, label]: processed_names) {
+                if (name.rfind(label, 0) == 0) {
+                    // found it
+                    res.emplace(func_name, &function);
+                    break;
+                }
+            }
+        }
+    }
+
+    return res;
+}
+
+inline std::string demangle(const char *name) {
+    // code from https://stackoverflow.com/a/28048299
+    int status = -1;
+    std::unique_ptr<char, void (*)(void *)> res{abi::__cxa_demangle(name, nullptr, nullptr, &status), std::free};
+    return (status == 0) ? res.get() : std::string(name);
+}
+
+
+std::string get_demangled_name(const llvm::Function *function) {
+    if (!function) return {};
+    auto const *name = function->getName().data();
+    return demangle(name);
+}
+
+std::string get_name(const llvm::Function *function) {
+    if (!function) return {};
+    return function->getName().str();
+}
+
+const llvm::Instruction *get_pre_alloc(const llvm::Instruction *instruction) {
+    auto *node = instruction->getPrevNode();
+    while (node) {
+        if (llvm::isa<llvm::AllocaInst>(node)) {
+            return node;
+        }
+        node = node->getPrevNode();
+    }
+    return nullptr;
 }
 
 std::unique_ptr<llvm::Module> parse_llvm_bitcode(const std::string &path) {
