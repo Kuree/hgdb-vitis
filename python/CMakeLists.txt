@@ -4,6 +4,7 @@ target_link_libraries(hgdb-vitis PUBLIC llvm::bitcode llvm::core llvm::support l
 set_property(TARGET hgdb-vitis PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_compile_options(hgdb-vitis PRIVATE -Wall -Wextra -Wpedantic -Werror -Wno-unused-parameter -Wno-deprecated-copy
         -Wno-unused-local-typedefs)
+target_compile_definitions(hgdb-vitis PUBLIC -D_GLIBCXX_USE_CXX11_ABI=0)
 
 pybind11_add_module(vitis binding.cc)
 target_link_libraries(vitis PUBLIC hgdb-vitis)
