@@ -5,6 +5,7 @@ import argparse
 import pathlib
 import vitis
 import re
+from typing import List, Dict
 import xml.etree.ElementTree as ElementTree
 
 
@@ -12,15 +13,29 @@ class StateInfo:
     def __init__(self, state_id: int):
         self.id = state_id
         self.instructions = []
-        self.instance = None
+        self.module = None
+
+
+class ModuleInfo:
+    modules: Dict[str, "ModuleInfo"] = {}
+
+    def __init__(self, module_name):
+        self.module_name = module_name
+
+        self.optimized_function = None
+        self.debug_function = None
+
+        self.state_infos: Dict[int, StateInfo] = {}
 
 
 class InstanceInfo:
     def __init__(self, module_name, instance_name):
         self.module_name = module_name
         self.instance_name = instance_name
-        self.optimized_function = None
-        self.debug_function = None
+
+        if module_name not in ModuleInfo.modules:
+            ModuleInfo.modules[module_name] = ModuleInfo(module_name)
+        self.module_info = ModuleInfo.modules[module_name]
 
 
 class DesignInfo:
@@ -43,17 +58,19 @@ class DesignInfo:
         top_module_name = top_module.find("ModuleName").text
         assert top_module_name == self.top_name, "Design database files corrupted"
         # recursively figure out the design hierarchy
-        self.design_hierarchy = {}
+        self.design_hierarchy: Dict[str, List[InstanceInfo]] = {}
+        # create top module
+        ModuleInfo.modules[top_module_name] = ModuleInfo(top_module_name)
         self.__build_instance_hierarchy(top_module_name, top_module)
         self.__parse_llvm_bc()
-        self.__parse_state_transition()
+        self.__parse_state_transition(self.top_name)
         self.__compute_variable_mapping()
 
     def __build_instance_hierarchy(self, parent_name, node):
         inst_list = node.find("InstancesList")
+        self.design_hierarchy[parent_name] = []
         if inst_list is None:
             return
-        self.design_hierarchy[parent_name] = []
         for child in inst_list.findall("Instance"):
             inst_name = child.find("InstName").text
             module_name = child.find("ModuleName").text
@@ -72,7 +89,7 @@ class DesignInfo:
         # read out the debug build and figure out the call graph
         top_function = self.__g_bc.get_function(self.top_name)
         optimized_top_function = self.__o3_bc.get_function(self.top_name)
-        assert top_function is not None and optimized_top_function is not None,\
+        assert top_function is not None and optimized_top_function is not None, \
             "Unable to locate top function in LLVM bitcode"
         # we need to index locations to function instruction so that once we look at the state transition
         # we know what function to look at
@@ -86,21 +103,25 @@ class DesignInfo:
         # need to compute the demangled name, which is the instance name
         for name, func in self.__optimized_function_mapping.items():
             module_name = func.demangled_name
-            # maybe optimize the search
-            for instances in self.design_hierarchy.values():
-                for inst in instances:
-                    if inst.module_name == module_name:
-                        inst.optimized_function = func
-                        inst.debug_function = self.__g_bc.get_function(name)
+            assert module_name in ModuleInfo.modules
+            ModuleInfo.modules[module_name].optimized_function = func
+            ModuleInfo.modules[module_name].debug_function = self.__g_bc.get_function(name)
 
-    def __parse_state_transition(self):
-        # we only need to parse the state transition for the top module
-        # since everything is statically scheduled
-        rpt_path = os.path.join(self.__solution, ".autopilot", "db", self.top_name + ".verbose.rpt")
+    def __parse_state_transition(self, module_name):
+        # we need to parse state transition for every module since they are independent
+
+        # recursively parse the state transition
+        instances = self.design_hierarchy[module_name]
+        for inst in instances:
+            m_name = inst.module_name
+            # recursively parse it
+            self.__parse_state_transition(m_name)
+
+        module_state_info = ModuleInfo.modules[module_name].state_infos
+        rpt_path = os.path.join(self.__solution, ".autopilot", "db", module_name + ".verbose.rpt")
         assert os.path.exists(rpt_path), "Unable to find top verbose report"
         with open(rpt_path, "r") as f:
             rpt_lines = f.readlines()
-        self.state_info = {}
         for i, line in enumerate(rpt_lines):
             if line.strip() == "* FSM state operations:":
                 rpt_lines = rpt_lines[i + 1:]
@@ -121,7 +142,7 @@ class DesignInfo:
                 if state_id:
                     state_id = int(state_id)
                     current_state = StateInfo(state_id)
-                    self.state_info[state_id] = current_state
+                    module_state_info[state_id] = current_state
                     continue
             else:
                 m = state_instr_re.search(line)
@@ -135,9 +156,9 @@ class DesignInfo:
                         debug = (filename, line_num)
                     current_state.instructions.append((instr, debug))
 
-        # match state with instance
-        for state_id, state_info in self.state_info.items():
-            instrs = self.__get_state_related_instr(state_id)
+        # match state with module
+        for state_id, state_info in module_state_info.items():
+            instrs = self.__get_state_related_instr(module_name, state_id)
             if len(instrs) == 0:
                 continue
             # use the first one
@@ -145,23 +166,14 @@ class DesignInfo:
             debug_function_name = instr.function.name
             assert debug_function_name in self.__optimized_function_mapping, "Debug function not found"
             o3_function = self.__optimized_function_mapping[debug_function_name]
-            # FIXME: we don't know which instance this actually mapped to. Need to find a way for proper
-            #   mapping. for now we assume one-to-one mapping
-            module_name = o3_function.name
-            done = False
-            for instance_infos in self.design_hierarchy.values():
-                if done:
-                    break
-                for instance_info in instance_infos:
-                    if instance_info.module_name == module_name:
-                        state_info.instance = instance_info
-                        done = True
-                        break
+            m_name = o3_function.name
+            assert m_name in ModuleInfo.modules
+            state_info.module = ModuleInfo.modules[m_name]
 
-    def __get_state_related_instr(self, state_id):
+    def __get_state_related_instr(self, module_name, state_id):
         # based on locations annotated in the state report. Notice that the location information is also messed up
         # due to function inlining
-        instructions = self.state_info[state_id].instructions
+        instructions = ModuleInfo.modules[module_name].state_infos[state_id].instructions
         res = []
         line_info = set()
         for _, debug in instructions:
@@ -190,24 +202,27 @@ class DesignInfo:
         # from the debug bitcode and then try to match it with the optimized build. If there is any match, we have
         # to look around IR to see the actual name of the signal. This can be accomplished via readout out the
         # variable usage
-        for state_id, state_info in self.state_info.items():
-            instructions = self.__get_state_related_instr(state_id)
-            for instr in instructions:
-                # due to the transformation, we may not find a direct matching instruction
-                # we use the alloc instruction, which remains regardless the optimization
-                alloc = instr.prev_alloc
-                while alloc is not None:
-                    # notice that this is from the debug build!
-                    # if the code is SSA-transformed, which I think it is, the allocation should be unique
-                    if state_info.instance is None:
-                        break
-                    o3_function = state_info.instance.optimized_function
-                    matched_instr = o3_function.find_matching_instr(alloc)
-                    if matched_instr is not None:
-                        # find one. need to find what's actually called in RTL, which is very tricky since Vitis doesn't
-                        # open-source their stuff
-                        rtl_name = matched_instr.rtl_name
-                    alloc = alloc.prev_alloc
+        for module_name, module in ModuleInfo.modules.items():
+            for state_id, state_info in module.state_infos.items():
+                instructions = self.__get_state_related_instr(module_name, state_id)
+                for instr in instructions:
+                    # due to the transformation, we may not find a direct matching instruction
+                    # we use the alloc instruction, which remains regardless the optimization
+                    alloc = instr.prev_alloc
+                    while alloc is not None:
+                        # notice that this is from the debug build!
+                        # if the code is SSA-transformed, which I think it is, the allocation should be unique
+                        if state_info.module is None:
+                            break
+                        o3_function = state_info.module.optimized_function
+                        matched_instr = o3_function.find_matching_instr(alloc)
+                        if matched_instr is not None:
+                            # find one. need to find what's actually called in RTL,
+                            # which is very tricky since Xilinx doesn't open-source their stuff
+                            rtl_name = matched_instr.rtl_name
+                            if rtl_name:
+                                print(rtl_name)
+                        alloc = alloc.prev_alloc
 
 
 def get_args():
