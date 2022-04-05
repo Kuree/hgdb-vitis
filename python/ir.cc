@@ -1,13 +1,15 @@
 #include "ir.hh"
 
-#include "llvm/Support/IRReader.h"
-#include "llvm/Support/DebugLoc.h"
-#include "llvm/Analysis/DebugInfo.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/Support/SourceMgr.h"
-#include "llvm/Instructions.h"
-#include <unordered_set>
 #include <cxxabi.h>
+
+#include <unordered_set>
+
+#include "llvm/Analysis/DebugInfo.h"
+#include "llvm/Instructions.h"
+#include "llvm/LLVMContext.h"
+#include "llvm/Support/DebugLoc.h"
+#include "llvm/Support/IRReader.h"
+#include "llvm/Support/SourceMgr.h"
 
 llvm::LLVMContext *get_llvm_context() {
     static std::unique_ptr<llvm::LLVMContext> context;
@@ -23,8 +25,8 @@ std::vector<const llvm::Instruction *> get_function_instructions(const llvm::Mod
     if (!function) return {};
     std::vector<const llvm::Instruction *> res;
     res.reserve(function->size());
-    for (auto const &blk: *function) {
-        for (auto const &inst: blk) {
+    for (auto const &blk : *function) {
+        for (auto const &inst : blk) {
             res.emplace_back(&inst);
         }
     }
@@ -53,15 +55,15 @@ const llvm::Function *get_function(const llvm::Instruction *inst) {
 }
 
 // NOLINTNEXTLINE
-void index_function(std::map<std::string, std::map<uint32_t, std::vector<const llvm::Instruction *>>> &res,
-                    std::unordered_set<const llvm::Function *> &visited,
-                    const llvm::Function *function) {
+void index_function(
+    std::map<std::string, std::map<uint32_t, std::vector<const llvm::Instruction *>>> &res,
+    std::unordered_set<const llvm::Function *> &visited, const llvm::Function *function) {
     if (!function) return;
     // prevent recursion
     if (visited.find(function) != visited.end()) return;
     visited.emplace(function);
-    for (auto const &blk: *function) {
-        for (auto const &inst: blk) {
+    for (auto const &blk : *function) {
+        for (auto const &inst : blk) {
             auto filename = get_filename(&inst);
             if (filename.empty()) continue;
             auto line = get_line_num(&inst);
@@ -78,8 +80,8 @@ void index_function(std::map<std::string, std::map<uint32_t, std::vector<const l
     }
 }
 
-std::map<std::string, std::map<uint32_t, std::vector<const llvm::Instruction *>>>
-get_instr_loc(const llvm::Function *function) {
+std::map<std::string, std::map<uint32_t, std::vector<const llvm::Instruction *>>> get_instr_loc(
+    const llvm::Function *function) {
     std::map<std::string, std::map<uint32_t, std::vector<const llvm::Instruction *>>> result;
     std::unordered_set<const llvm::Function *> visited;
     index_function(result, visited, function);
@@ -89,8 +91,8 @@ get_instr_loc(const llvm::Function *function) {
 // NOLINTNEXTLINE
 void get_contained_functions(const llvm::Function *function, std::set<std::string> &res) {
     if (!function) return;
-    for (auto const &blk: *function) {
-        for (auto const &inst: blk) {
+    for (auto const &blk : *function) {
+        for (auto const &inst : blk) {
             if (llvm::isa<llvm::CallInst>(inst)) {
                 auto const &call = llvm::cast<llvm::CallInst>(inst);
                 // recursive call
@@ -112,19 +114,19 @@ std::set<std::string> get_contained_functions(const llvm::Function *function) {
     return res;
 }
 
-std::map<std::string, const llvm::Function *>
-get_optimized_functions(const llvm::Module *module, const std::set<std::string> &function_names) {
+std::map<std::string, const llvm::Function *> get_optimized_functions(
+    const llvm::Module *module, const std::set<std::string> &function_names) {
     // use the fact that all transformed basic blocks as original function name's label with .exit
     std::map<std::string, const llvm::Function *> res;
     std::unordered_map<std::string, std::string> processed_names;
-    for (auto const &func: function_names) {
+    for (auto const &func : function_names) {
         processed_names.emplace(func, func + ".exit");
     }
     auto const &functions = module->getFunctionList();
-    for (auto const &function: functions) {
-        for (auto const &block: function) {
+    for (auto const &function : functions) {
+        for (auto const &block : function) {
             auto name = block.getName().str();
-            for (auto const &[func_name, label]: processed_names) {
+            for (auto const &[func_name, label] : processed_names) {
                 if (name.rfind(label, 0) == 0) {
                     // found it
                     res.emplace(func_name, &function);
@@ -140,10 +142,10 @@ get_optimized_functions(const llvm::Module *module, const std::set<std::string> 
 inline std::string demangle(const char *name) {
     // code from https://stackoverflow.com/a/28048299
     int status = -1;
-    std::unique_ptr<char, void (*)(void *)> res{abi::__cxa_demangle(name, nullptr, nullptr, &status), std::free};
+    std::unique_ptr<char, void (*)(void *)> res{
+        abi::__cxa_demangle(name, nullptr, nullptr, &status), std::free};
     return (status == 0) ? res.get() : std::string(name);
 }
-
 
 std::string get_demangled_name(const llvm::Function *function) {
     if (!function) return {};
@@ -167,13 +169,14 @@ const llvm::Instruction *get_pre_alloc(const llvm::Instruction *instruction) {
     return nullptr;
 }
 
-const llvm::Instruction *find_matching_instr(const llvm::Function *function, const llvm::Instruction *target) {
+const llvm::Instruction *find_matching_instr(const llvm::Function *function,
+                                             const llvm::Instruction *target) {
     if (!function || !target) return nullptr;
     // for now, we only focus on allocation, which is where variable gets assigned
     if (!llvm::isa<llvm::AllocaInst>(target)) return nullptr;
     auto const *target_alloc = llvm::cast<llvm::AllocaInst>(target);
-    for (auto const &blk: *function) {
-        for (auto const &instr: blk) {
+    for (auto const &blk : *function) {
+        for (auto const &instr : blk) {
             // notice that we can't use is identical because they are not in the same module
             // we just print out as a string and compare them
             if (!llvm::isa<llvm::AllocaInst>(instr)) continue;
@@ -201,8 +204,8 @@ std::string guess_rtl_name(const llvm::Instruction *instruction) {
         if (!user) continue;
         std::string name = user->getName().str();
         if (!name.empty()) {
-            // no idea where these prefix come from, maybe it's not even always correct, since cmp sounds like a
-            // comparison to me
+            // no idea where these prefix come from, maybe it's not even always correct, since cmp
+            // sounds like a comparison to me
             auto res = "ap_sig_allocacmp_" + name;
             return res;
         }
