@@ -50,8 +50,12 @@ uint32_t get_line_num(const llvm::Instruction *inst) {
 }
 
 const llvm::Function *get_function(const llvm::Instruction *inst) {
-    (void)inst;
-    return nullptr;
+    auto *bb = inst->getParent();
+    if (bb) {
+        return bb->getParent();
+    } else {
+        return nullptr;
+    }
 }
 
 // NOLINTNEXTLINE
