@@ -2,6 +2,7 @@
 
 #include <cxxabi.h>
 
+#include <iostream>
 #include <unordered_set>
 
 #include "llvm/Analysis/DebugInfo.h"
@@ -220,5 +221,8 @@ std::string guess_rtl_name(const llvm::Instruction *instruction) {
 llvm::Module *parse_llvm_bitcode(const std::string &path) {
     llvm::SMDiagnostic error;
     auto module = llvm::ParseIRFile(path, error, *get_llvm_context());
+    if (!module) {
+        std::cerr << error.getMessage() << std::endl;
+    }
     return module;
 }
