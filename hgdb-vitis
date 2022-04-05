@@ -71,7 +71,9 @@ class DesignInfo:
 
         # read out the debug build and figure out the call graph
         top_function = self.__g_bc.get_function(self.top_name)
-        assert top_function is not None, "Unable to locate top function in LLVM bitcode"
+        optimized_top_function = self.__o3_bc.get_function(self.top_name)
+        assert top_function is not None and optimized_top_function is not None,\
+            "Unable to locate top function in LLVM bitcode"
         # we need to index locations to function instruction so that once we look at the state transition
         # we know what function to look at
         self.__loc_map = top_function.get_instr_loc()
@@ -80,6 +82,7 @@ class DesignInfo:
         # notice that we don't know the logic of how labeled basic block gets transformed into a function inside
         # Vitis (it's not open-sourced). As a result, we have to get creative
         self.__optimized_function_mapping = self.__o3_bc.get_optimized_functions(g_function_names)
+        self.__optimized_function_mapping[self.top_name] = optimized_top_function
         # need to compute the demangled name, which is the instance name
         for name, func in self.__optimized_function_mapping.items():
             module_name = func.demangled_name
@@ -193,10 +196,18 @@ class DesignInfo:
                 # due to the transformation, we may not find a direct matching instruction
                 # we use the alloc instruction, which remains regardless the optimization
                 alloc = instr.prev_alloc
+                if alloc is None:
+                    continue
                 # notice that this is from the debug build!
                 # if the code is SSA-transformed, which I think it is, the allocation should be unique
-
-
+                if state_info.instance is None:
+                    continue
+                o3_function = state_info.instance.optimized_function
+                matched_instr = o3_function.find_matching_instr(alloc)
+                if matched_instr is not None:
+                    # find one. need to find what's actually called in RTL, which is very tricky since Vitis doesn't
+                    # open-source their stuff
+                    rtl_name = matched_instr.rtl_name
 
 
 def get_args():

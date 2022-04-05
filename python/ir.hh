@@ -26,6 +26,10 @@ std::string get_name(const llvm::Function *function);
 
 const llvm::Instruction *get_pre_alloc(const llvm::Instruction *instruction);
 
+const llvm::Instruction *find_matching_instr(const llvm::Function *function, const llvm::Instruction *target);
+
+std::string guess_rtl_name(const llvm::Instruction *instruction);
+
 std::unique_ptr<llvm::Module> parse_llvm_bitcode(const std::string &path);
 
 

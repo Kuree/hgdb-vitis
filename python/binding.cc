@@ -19,15 +19,18 @@ void bind_llvm(py::module &m) {
             .def_property_readonly("line_num", &get_line_num)
             .def_property_readonly("function", py::overload_cast<>(&llvm::Instruction::getFunction),
                                    py::return_value_policy::reference)
-            .def_property_readonly("prev", py::overload_cast<>(&llvm::Instruction::getPrevNode))
-            .def_property_readonly("pre_alloc", &get_pre_alloc)
-            .def("identical", &llvm::Instruction::isIdenticalTo);
+            .def_property_readonly("prev", py::overload_cast<>(&llvm::Instruction::getPrevNode),
+                                   py::return_value_policy::reference)
+            .def_property_readonly("prev_alloc", &get_pre_alloc, py::return_value_policy::reference)
+            .def("identical", &llvm::Instruction::isIdenticalTo)
+            .def_property_readonly("rtl_name", &guess_rtl_name);
 
     py::class_<llvm::Function, std::unique_ptr<llvm::Function, py::nodelete>>(m, "Function")
             .def("get_instr_loc", &get_instr_loc, py::return_value_policy::reference_internal)
             .def("get_contained_functions", &get_contained_functions)
             .def_property_readonly("demangled_name", &get_demangled_name)
-            .def_property_readonly("name", py::overload_cast<const llvm::Function *>(&get_name));
+            .def_property_readonly("name", py::overload_cast<const llvm::Function *>(&get_name))
+            .def("find_matching_instr", &find_matching_instr);
 }
 
 PYBIND11_MODULE(vitis, m) {

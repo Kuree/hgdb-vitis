@@ -160,6 +160,49 @@ const llvm::Instruction *get_pre_alloc(const llvm::Instruction *instruction) {
     return nullptr;
 }
 
+const llvm::Instruction *find_matching_instr(const llvm::Function *function, const llvm::Instruction *target) {
+    if (!function || !target) return nullptr;
+    // for now, we only focus on allocation, which is where variable gets assigned
+    if (!llvm::isa<llvm::AllocaInst>(target)) return nullptr;
+    auto const *target_alloc = llvm::cast<llvm::AllocaInst>(target);
+    for (auto const &blk: *function) {
+        for (auto const &instr: blk) {
+            // notice that we can't use is identical because they are not in the same module
+            // we just print out as a string and compare them
+            if (!llvm::isa<llvm::AllocaInst>(instr)) continue;
+            // assume it's after SSA transformation
+            auto const &instr_alloc = llvm::cast<llvm::AllocaInst>(instr);
+            // if they declare the same variable
+            if (instr_alloc.getName() == target_alloc->getName()) {
+                return &instr;
+            }
+        }
+    }
+    return nullptr;
+}
+
+std::string guess_rtl_name(const llvm::Instruction *instruction) {
+    // I have no idea how Vitis generates signal names and do weird optimizations.
+    // this is just some ways I gathered from generated LLVM bitcode and RTL
+    if (!llvm::isa<llvm::AllocaInst>(instruction)) {
+        // for now, we only focus on allocation
+        return {};
+    }
+    for (auto const &use: instruction->uses()) {
+        // should only have one use?
+        auto *user = use.getUser();
+        if (!user) continue;
+        std::string name = user->getName().str();
+        if (!name.empty()) {
+            // no idea where these prefix come from, maybe it's not even always correct, since cmp sounds like a
+            // comparison to me
+            auto res = "ap_sig_allocacmp_" + name;
+            return res;
+        }
+    }
+    return {};
+}
+
 std::unique_ptr<llvm::Module> parse_llvm_bitcode(const std::string &path) {
     llvm::SMDiagnostic error;
     auto module = llvm::parseIRFile(path, error, *get_llvm_context());
