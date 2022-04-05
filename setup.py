@@ -5,6 +5,9 @@ import os
 import sys
 import multiprocessing
 
+LLVM_NAME = "clang+llvm-3.1-x86_64-linux-ubuntu_12.04"
+LLVM_URL = f"https://releases.llvm.org/3.1/{LLVM_NAME}.tar.gz"
+
 
 class CMakeExtension(Extension):
     def __init__(self, name, sourcedir=''):
@@ -29,6 +32,13 @@ class CMakeBuild(build_ext):
             os.path.dirname(self.get_ext_fullpath(ext.name)))
         cmake_args = ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
                       '-DPYTHON_EXECUTABLE=' + sys.executable]
+
+        # llvm directory
+        llvm_dir = os.path.join(self.build_temp, "llvm")
+        if not os.path.exists(llvm_dir):
+            subprocess.call(["wget", LLVM_URL], cwd=self.build_temp)
+            subprocess.call(["tar", "xzf", f"{LLVM_NAME}.tar.gz"], cwd=self.build_temp)
+            subprocess.call(["mv", LLVM_NAME, "llvm"], cwd=self.build_temp)
 
         # test env variable to determine whether to build in debug
         if os.environ.get("DEBUG") is not None:
