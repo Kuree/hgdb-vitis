@@ -1,10 +1,11 @@
 #include "ir.hh"
 
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IRReader/IRReader.h"
+#include "llvm/Support/IRReader.h"
+#include "llvm/Support/DebugLoc.h"
+#include "llvm/Analysis/DebugInfo.h"
+#include "llvm/LLVMContext.h"
 #include "llvm/Support/SourceMgr.h"
-#include "llvm/IR/DebugInfoMetadata.h"
-#include "llvm/IR/Instructions.h"
+#include "llvm/Instructions.h"
 #include <unordered_set>
 #include <cxxabi.h>
 
@@ -32,9 +33,10 @@ std::vector<const llvm::Instruction *> get_function_instructions(const llvm::Mod
 
 std::string get_filename(const llvm::Instruction *inst) {
     auto const &loc = inst->getDebugLoc();
-    auto *di_loc = loc.get();
-    if (di_loc) {
-        return di_loc->getFilename().str();
+    auto *scope = loc.getAsMDNode(*get_llvm_context());
+    if (scope) {
+        auto di_location = llvm::DILocation(scope);
+        return di_location.getFilename().str();
     } else {
         return {};
     }
@@ -43,6 +45,11 @@ std::string get_filename(const llvm::Instruction *inst) {
 uint32_t get_line_num(const llvm::Instruction *inst) {
     auto const &loc = inst->getDebugLoc();
     return loc.getLine();
+}
+
+const llvm::Function *get_function(const llvm::Instruction *inst) {
+    (void)inst;
+    return nullptr;
 }
 
 // NOLINTNEXTLINE
@@ -188,9 +195,9 @@ std::string guess_rtl_name(const llvm::Instruction *instruction) {
         // for now, we only focus on allocation
         return {};
     }
-    for (auto const &use: instruction->uses()) {
+    for (auto use = instruction->use_begin(); use != instruction->use_end(); use++) {
         // should only have one use?
-        auto *user = use.getUser();
+        auto *user = use.getUse().getUser();
         if (!user) continue;
         std::string name = user->getName().str();
         if (!name.empty()) {
@@ -203,8 +210,8 @@ std::string guess_rtl_name(const llvm::Instruction *instruction) {
     return {};
 }
 
-std::unique_ptr<llvm::Module> parse_llvm_bitcode(const std::string &path) {
+llvm::Module *parse_llvm_bitcode(const std::string &path) {
     llvm::SMDiagnostic error;
-    auto module = llvm::parseIRFile(path, error, *get_llvm_context());
+    auto module = llvm::ParseIRFile(path, error, *get_llvm_context());
     return module;
 }

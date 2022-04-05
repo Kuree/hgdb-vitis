@@ -17,7 +17,7 @@ void bind_llvm(py::module &m) {
                                                                                     "Instruction")
             .def_property_readonly("filename", &get_filename)
             .def_property_readonly("line_num", &get_line_num)
-            .def_property_readonly("function", py::overload_cast<>(&llvm::Instruction::getFunction),
+            .def_property_readonly("function", &get_function,
                                    py::return_value_policy::reference)
             .def_property_readonly("prev", py::overload_cast<>(&llvm::Instruction::getPrevNode),
                                    py::return_value_policy::reference)
@@ -35,5 +35,5 @@ void bind_llvm(py::module &m) {
 
 PYBIND11_MODULE(vitis, m) {
     bind_llvm(m);
-    m.def("parse_llvm_bitcode", &parse_llvm_bitcode);
+    m.def("parse_llvm_bitcode", &parse_llvm_bitcode, py::return_value_policy::reference);
 }
