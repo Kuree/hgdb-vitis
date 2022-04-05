@@ -196,18 +196,18 @@ class DesignInfo:
                 # due to the transformation, we may not find a direct matching instruction
                 # we use the alloc instruction, which remains regardless the optimization
                 alloc = instr.prev_alloc
-                if alloc is None:
-                    continue
-                # notice that this is from the debug build!
-                # if the code is SSA-transformed, which I think it is, the allocation should be unique
-                if state_info.instance is None:
-                    continue
-                o3_function = state_info.instance.optimized_function
-                matched_instr = o3_function.find_matching_instr(alloc)
-                if matched_instr is not None:
-                    # find one. need to find what's actually called in RTL, which is very tricky since Vitis doesn't
-                    # open-source their stuff
-                    rtl_name = matched_instr.rtl_name
+                while alloc is not None:
+                    # notice that this is from the debug build!
+                    # if the code is SSA-transformed, which I think it is, the allocation should be unique
+                    if state_info.instance is None:
+                        break
+                    o3_function = state_info.instance.optimized_function
+                    matched_instr = o3_function.find_matching_instr(alloc)
+                    if matched_instr is not None:
+                        # find one. need to find what's actually called in RTL, which is very tricky since Vitis doesn't
+                        # open-source their stuff
+                        rtl_name = matched_instr.rtl_name
+                    alloc = alloc.prev_alloc
 
 
 def get_args():
