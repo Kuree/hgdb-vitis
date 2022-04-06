@@ -32,8 +32,7 @@ void bind_llvm(py::module &m) {
         .def("get_instr_loc", &get_instr_loc, py::return_value_policy::reference_internal)
         .def("get_contained_functions", &get_contained_functions)
         .def_property_readonly("demangled_name", &get_demangled_name)
-        .def_property_readonly("name", py::overload_cast<const llvm::Function *>(&get_name))
-        .def("find_matching_instr", &find_matching_instr);
+        .def_property_readonly("name", py::overload_cast<const llvm::Function *>(&get_name)));
 }
 
 PYBIND11_MODULE(vitis, m) {

@@ -59,37 +59,20 @@ const llvm::Function *get_function(const llvm::Instruction *inst) {
     }
 }
 
-// NOLINTNEXTLINE
-void index_function(
-    std::map<std::string, std::map<uint32_t, std::vector<const llvm::Instruction *>>> &res,
-    std::unordered_set<const llvm::Function *> &visited, const llvm::Function *function) {
-    if (!function) return;
-    // prevent recursion
-    if (visited.find(function) != visited.end()) return;
-    visited.emplace(function);
-    for (auto const &blk : *function) {
-        for (auto const &inst : blk) {
-            auto filename = get_filename(&inst);
-            if (filename.empty()) continue;
-            auto line = get_line_num(&inst);
-            res[filename][line].emplace_back(&inst);
-
-            // if it's a call instruction, we track through the called functions
-            if (llvm::isa<llvm::CallInst>(inst)) {
-                auto const &call = llvm::cast<llvm::CallInst>(inst);
-                // recursive call
-                auto *func = call.getCalledFunction();
-                index_function(res, visited, func);
-            }
-        }
-    }
-}
-
 std::map<std::string, std::map<uint32_t, std::vector<const llvm::Instruction *>>> get_instr_loc(
     const llvm::Function *function) {
     std::map<std::string, std::map<uint32_t, std::vector<const llvm::Instruction *>>> result;
-    std::unordered_set<const llvm::Function *> visited;
-    index_function(result, visited, function);
+    if (!function) return {};
+
+    for (auto const &blk : *function) {
+        for (auto const &inst : blk) {
+            auto filename = get_filename(&inst);
+            if (!filename.empty()) {
+                auto line = get_line_num(&inst);
+                result[filename][line].emplace_back(&inst);
+            }
+        }
+    }
     return result;
 }
 

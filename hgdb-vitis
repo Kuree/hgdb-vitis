@@ -22,8 +22,7 @@ class ModuleInfo:
     def __init__(self, module_name):
         self.module_name = module_name
 
-        self.optimized_function = None
-        self.debug_function = None
+        self.function = None
 
         self.state_infos: Dict[int, StateInfo] = {}
 
@@ -80,32 +79,24 @@ class DesignInfo:
 
     def __parse_llvm_bc(self):
         # find the nice build with all the debug information
-        g_bc_filename = os.path.join(self.__solution, ".autopilot", "db", self.top_name + ".bc")
         o3_filename = os.path.join(self.__solution, ".autopilot", "db", "a.o.3.bc")
-        assert os.path.exists(g_bc_filename) and os.path.exists(o3_filename), "Design bitcode not found"
-        self.__g_bc = vitis.parse_llvm_bitcode(g_bc_filename)
+        assert os.path.exists(o3_filename), "Design bitcode not found"
         self.__o3_bc = vitis.parse_llvm_bitcode(o3_filename)
 
         # read out the debug build and figure out the call graph
-        top_function = self.__g_bc.get_function(self.top_name)
-        optimized_top_function = self.__o3_bc.get_function(self.top_name)
-        assert top_function is not None and optimized_top_function is not None, \
-            "Unable to locate top function in LLVM bitcode"
-        # we need to index locations to function instruction so that once we look at the state transition
-        # we know what function to look at
-        self.__loc_map = top_function.get_instr_loc()
-        g_function_names = top_function.get_contained_functions()
-        # need to establish mapping from the debug build to the optimized build
-        # notice that we don't know the logic of how labeled basic block gets transformed into a function inside
-        # Vitis (it's not open-sourced). As a result, we have to get creative
-        self.__optimized_function_mapping = self.__o3_bc.get_optimized_functions(g_function_names)
-        self.__optimized_function_mapping[self.top_name] = optimized_top_function
+        top_function = self.__o3_bc.get_function(self.top_name)
+        assert top_function is not None, "Unable to locate top function in LLVM bitcode"
+        function_names = top_function.get_contained_functions()
+        # only interested in the functions created from top, which has its name prefixed
+        function_names = [name for name in function_names if self.top_name in name]
         # need to compute the demangled name, which is the instance name
-        for name, func in self.__optimized_function_mapping.items():
+        for name in function_names:
+            func = self.__o3_bc.get_function(name)
+            assert func is not None, "Cannot find function " + name
             module_name = func.demangled_name
             assert module_name in ModuleInfo.modules
-            ModuleInfo.modules[module_name].optimized_function = func
-            ModuleInfo.modules[module_name].debug_function = self.__g_bc.get_function(name)
+            ModuleInfo.modules[module_name].function = func
+        ModuleInfo.modules[self.top_name].function = top_function
 
     def __parse_state_transition(self, module_name):
         # we need to parse state transition for every module since they are independent
@@ -158,22 +149,15 @@ class DesignInfo:
 
         # match state with module
         for state_id, state_info in module_state_info.items():
-            instrs = self.__get_state_related_instr(module_name, state_id)
-            if len(instrs) == 0:
-                continue
-            # use the first one
-            instr = instrs[0]
-            debug_function_name = instr.function.name
-            assert debug_function_name in self.__optimized_function_mapping, "Debug function not found"
-            o3_function = self.__optimized_function_mapping[debug_function_name]
-            m_name = o3_function.name
-            assert m_name in ModuleInfo.modules
-            state_info.module = ModuleInfo.modules[m_name]
+            state_info.module = ModuleInfo.modules[module_name]
 
-    def __get_state_related_instr(self, module_name, state_id):
+    @staticmethod
+    def __get_state_related_instr(module_name, function, state_id):
         # based on locations annotated in the state report. Notice that the location information is also messed up
         # due to function inlining
-        instructions = ModuleInfo.modules[module_name].state_infos[state_id].instructions
+        module = ModuleInfo.modules[module_name]
+        instructions = module.state_infos[state_id].instructions
+        loc_map = function.get_instr_loc()
         res = []
         line_info = set()
         for _, debug in instructions:
@@ -181,30 +165,23 @@ class DesignInfo:
                 continue
             # decode filename and line
             filename, line_num = debug
-            if filename in self.__loc_map and line_num in self.__loc_map[filename]:
+            if filename in loc_map and line_num in loc_map[filename]:
                 # we only need one instruction for that line
                 entry = (filename, line_num)
                 if entry in line_info:
                     continue
                 line_info.add(entry)
-                instr = self.__loc_map[filename][line_num][0]
+                instr = loc_map[filename][line_num][0]
 
                 res.append(instr)
 
         return res
 
     def __compute_variable_mapping(self):
-        # this is to deal with completely messed up symbol mapping in Vitis. In addition, the final optimized
-        # bitcode does not contain valid debug information. reached out to Vitis team. waiting for any response.
-
-        # we use the following algorithm
-        # for each state, we go to the corresponding line (using debug bitcode), get the variable declaration
-        # from the debug bitcode and then try to match it with the optimized build. If there is any match, we have
-        # to look around IR to see the actual name of the signal. This can be accomplished via readout out the
-        # variable usage
         for module_name, module in ModuleInfo.modules.items():
             for state_id, state_info in module.state_infos.items():
-                instructions = self.__get_state_related_instr(module_name, state_id)
+                function = module.function
+                instructions = self.__get_state_related_instr(module_name, function, state_id)
                 for instr in instructions:
                     # due to the transformation, we may not find a direct matching instruction
                     # we use the alloc instruction, which remains regardless the optimization
@@ -214,14 +191,11 @@ class DesignInfo:
                         # if the code is SSA-transformed, which I think it is, the allocation should be unique
                         if state_info.module is None:
                             break
-                        o3_function = state_info.module.optimized_function
-                        matched_instr = o3_function.find_matching_instr(alloc)
-                        if matched_instr is not None:
-                            # find one. need to find what's actually called in RTL,
-                            # which is very tricky since Xilinx doesn't open-source their stuff
-                            rtl_name = matched_instr.rtl_name
-                            if rtl_name:
-                                print(rtl_name)
+                        # find one. need to find what's actually called in RTL,
+                        # which is very tricky since Xilinx doesn't open-source their stuff
+                        rtl_name = alloc.rtl_name
+                        if rtl_name:
+                            print(rtl_name)
                         alloc = alloc.prev_alloc
 
 
