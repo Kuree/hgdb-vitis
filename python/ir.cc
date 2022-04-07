@@ -2,8 +2,8 @@
 
 #include <cxxabi.h>
 
+#include <filesystem>
 #include <iostream>
-#include <unordered_set>
 
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Analysis/DebugInfo.h"
@@ -158,28 +158,6 @@ const llvm::Instruction *get_pre_alloc(const llvm::Instruction *instruction) {
     return nullptr;
 }
 
-const llvm::Instruction *find_matching_instr(const llvm::Function *function,
-                                             const llvm::Instruction *target) {
-    if (!function || !target) return nullptr;
-    // for now, we only focus on allocation, which is where variable gets assigned
-    if (!llvm::isa<llvm::AllocaInst>(target)) return nullptr;
-    auto const *target_alloc = llvm::cast<llvm::AllocaInst>(target);
-    for (auto const &blk : *function) {
-        for (auto const &instr : blk) {
-            // notice that we can't use is identical because they are not in the same module
-            // we just print out as a string and compare them
-            if (!llvm::isa<llvm::AllocaInst>(instr)) continue;
-            // assume it's after SSA transformation
-            auto const &instr_alloc = llvm::cast<llvm::AllocaInst>(instr);
-            // if they declare the same variable
-            if (instr_alloc.getName() == target_alloc->getName()) {
-                return &instr;
-            }
-        }
-    }
-    return nullptr;
-}
-
 std::string guess_rtl_name(const llvm::Instruction *instruction) {
     // I have no idea how Vitis generates signal names and do weird optimizations.
     // this is just some ways I gathered from generated LLVM bitcode and RTL
@@ -211,9 +189,19 @@ llvm::Module *parse_llvm_bitcode(const std::string &path) {
     return module;
 }
 
-Scope get_debug_scope(const llvm::Function *function) {
-    if (!function) return {};
-    Scope res;
+std::string resolve_filename(const std::string &filename, const std::string &directory) {
+    namespace fs = std::filesystem;
+    fs::path path = directory;
+    path /= filename;
+    auto res = fs::weakly_canonical(fs::absolute(path));
+    return res.string();
+}
+
+Scope *get_debug_scope(const llvm::Function *function, Context &context) {
+    if (!function) return nullptr;
+    auto *root_scope = context.get_scope<Scope>(nullptr);
+    std::unordered_map<const llvm::DIScope *, Scope *> scope_mapping;
+
     for (auto const &blk : *function) {
         for (auto const &instr : blk) {
             // we are dealing with old LLVM code
@@ -237,18 +225,17 @@ Scope get_debug_scope(const llvm::Function *function) {
 
             for (auto i = 0u; i < num_op; i++) {
                 auto *op = desc->getOperand(i);
-                if (!llvm::isa<llvm::MDString>(op)) continue;
-                auto md = llvm::cast<llvm::MDString>(op);
-                var_name = md->getString().str();
-                break;
+                if (!op) continue;
+                if (llvm::isa<llvm::MDString>(op)) {
+                    auto md = llvm::cast<llvm::MDString>(op);
+                    var_name = md->getString().str();
+                    break;
+                }
             }
             // try to guess the actual RTL name
             // obtain the value and see the type
-            // TODO: llvm gives DW tag to both array and variable. need to figure out a way
-            //   to tell them apart
-            auto di = llvm::DIDescriptor(desc);
-            auto tag = di.getTag();
-            if (tag & llvm::dwarf::llvm_dwarf_constants::DW_TAG_auto_variable) {
+            // for now we just hack it
+            if (var_name.find('[') != std::string::npos) {
                 // this is an auto variable
                 // very likely created from an array
                 value_name.append("_d0");
@@ -263,8 +250,24 @@ Scope get_debug_scope(const llvm::Function *function) {
                     }
                 }
             }
+
+            Variable var(var_name, value_name);
+            // compute the debugging scope
+            // for now we put everything in the same scope. Need to refactor this to compute
+            // actual debug scope
+            auto debug_loc = instr.getDebugLoc();
+            uint32_t line = debug_loc.getLine();
+            context.get_scope<Instruction>(root_scope, var, line);
+
+            if (root_scope->filename.empty()) {
+                // for now, we assume there is only one filename
+                auto *node = debug_loc.getAsMDNode(*get_llvm_context());
+                auto loc = llvm::DILocation(node);
+                root_scope->filename =
+                    resolve_filename(loc.getFilename().str(), loc.getDirectory().str());
+            }
         }
     }
 
-    return res;
+    return root_scope;
 }

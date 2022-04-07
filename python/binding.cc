@@ -33,10 +33,13 @@ void bind_llvm(py::module &m) {
         .def("get_contained_functions", &get_contained_functions)
         .def_property_readonly("demangled_name", &get_demangled_name)
         .def_property_readonly("name", py::overload_cast<const llvm::Function *>(&get_name))
-        .def("get_debug_scope", &get_debug_scope);
+        .def("get_debug_scope", &get_debug_scope, py::return_value_policy::reference);
 }
 
-void bind_scope(py::module &m) { py::class_<Scope>(m, "Scope"); }
+void bind_scope(py::module &m) {
+    py::class_<Scope>(m, "Scope");
+    py::class_<Context>(m, "Context").def(py::init<>());
+}
 
 PYBIND11_MODULE(vitis, m) {
     bind_llvm(m);

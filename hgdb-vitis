@@ -178,9 +178,10 @@ class DesignInfo:
         return res
 
     def __compute_variable_mapping(self):
+        context = vitis.Context()
         for module_name, module in ModuleInfo.modules.items():
             function = module.function
-            scope = function.get_debug_scope()
+            scope = function.get_debug_scope(context)
             print(scope)
 
 

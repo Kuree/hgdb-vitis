@@ -5,6 +5,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "llvm/Module.h"
@@ -43,21 +44,44 @@ llvm::Module *parse_llvm_bitcode(const std::string &path);
 struct Variable {
     std::string name;
     std::string rtl;
-};
 
-struct Instruction {
-    // basically a line
-    Variable var;
-
-    uint32_t line = 0;
+    Variable(std::string name, std::string rtl) : name(std::move(name)), rtl(std::move(rtl)) {}
 };
 
 class Scope {
 public:
-    std::vector<Scope> scopes;
+    std::vector<Scope *> scopes;
     std::string filename;
+
+    const Scope *parent_scope;
+
+    explicit Scope(const Scope *parent_scope) : parent_scope(parent_scope) {}
 };
 
-Scope get_debug_scope(const llvm::Function *function);
+class Instruction : public Scope {
+public:
+    // basically a line
+    Variable var;
+
+    uint32_t line = 0;
+
+    Instruction(const Scope *parent_scope, Variable var, uint32_t line)
+        : Scope(parent_scope), var(std::move(var)), line(line) {}
+};
+
+class Context {
+public:
+    template <typename T, typename... Args>
+    T *get_scope(Scope *parent_scope, Args... args) {
+        auto entry = std::make_unique<T>(parent_scope, args...);
+        if (parent_scope) parent_scope->scopes.emplace_back(entry.get());
+        return reinterpret_cast<T *>(scopes_.emplace_back(std::move(entry)).get());
+    }
+
+private:
+    std::vector<std::unique_ptr<Scope>> scopes_;
+};
+
+Scope *get_debug_scope(const llvm::Function *function, Context &context);
 
 #endif  // HGDB_VITIS_IR_HH
