@@ -63,7 +63,6 @@ class DesignInfo:
         self.__build_instance_hierarchy(top_module_name, top_module)
         self.__parse_llvm_bc()
         self.__parse_state_transition(self.top_name)
-        self.__compute_variable_mapping()
 
     def __build_instance_hierarchy(self, parent_name, node):
         inst_list = node.find("InstancesList")
@@ -177,12 +176,28 @@ class DesignInfo:
 
         return res
 
-    def __compute_variable_mapping(self):
+    def dump_symbol_table(self, output):
         context = vitis.Context()
+        tables = {}
         for module_name, module in ModuleInfo.modules.items():
             function = module.function
             scope = function.get_debug_scope(context)
-            print(scope.serialize())
+            tables[module_name] = scope.serialize()
+
+        res = "{\"generator\":\"vitis\",\"table\":["
+        i = 1
+        for module_name, s in tables.items():
+            res += "{"
+            res += "\"type\": \"module\", \"name\":\"" + module_name + "\",\"scope\":[" + s + "]"
+            res += "}"
+            if i != len(tables):
+                res += ","
+            i += 1
+        res += f"],""top"":"""f"{self.top_name}""}"
+
+        if len(output) > 0:
+            with open(output, "w+") as f:
+                f.write(res)
 
 
 def get_args():
@@ -197,6 +212,7 @@ def main():
     args = get_args()
     solution = args.solution
     info = DesignInfo(solution)
+    info.dump_symbol_table(args.output)
 
 
 if __name__ == "__main__":
