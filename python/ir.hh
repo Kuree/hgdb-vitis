@@ -56,23 +56,34 @@ public:
     const Scope *parent_scope;
 
     explicit Scope(const Scope *parent_scope) : parent_scope(parent_scope) {}
+
+    [[nodiscard]] virtual std::string type() const { return "block"; }
 };
 
 class Instruction : public Scope {
 public:
+    uint32_t line;
+
+    Instruction(const Scope *parent_scope, uint32_t line) : Scope(parent_scope), line(line) {}
+
+    [[nodiscard]] std::string type() const override { return "none"; }
+};
+
+class DeclInstruction : public Instruction {
+public:
     // basically a line
     Variable var;
 
-    uint32_t line = 0;
+    DeclInstruction(const Scope *parent_scope, Variable var, uint32_t line)
+        : Instruction(parent_scope, line), var(std::move(var)) {}
 
-    Instruction(const Scope *parent_scope, Variable var, uint32_t line)
-        : Scope(parent_scope), var(std::move(var)), line(line) {}
+    [[nodiscard]] std::string type() const override { return "decl"; }
 };
 
 class Context {
 public:
     template <typename T, typename... Args>
-    T *get_scope(Scope *parent_scope, Args... args) {
+    T *add_scope(Scope *parent_scope, Args... args) {
         auto entry = std::make_unique<T>(parent_scope, args...);
         if (parent_scope) parent_scope->scopes.emplace_back(entry.get());
         return reinterpret_cast<T *>(scopes_.emplace_back(std::move(entry)).get());

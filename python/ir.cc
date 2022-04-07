@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <iostream>
+#include <unordered_set>
 
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Analysis/DebugInfo.h"
@@ -197,71 +198,92 @@ std::string resolve_filename(const std::string &filename, const std::string &dir
     return res.string();
 }
 
+void process_var_decl(const llvm::CallInst &call_inst, Context &context, Scope *root_scope) {
+    auto *value = llvm::cast<llvm::MDNode>(call_inst.getOperand(0))->getOperand(0);
+    auto *desc = llvm::cast<llvm::MDNode>(call_inst.getOperand(1));
+    auto num_op = desc->getNumOperands();
+    std::string var_name;
+    std::string value_name;
+
+    if (!value->hasName()) return;
+    value_name = value->getName().str();
+
+    for (auto i = 0u; i < num_op; i++) {
+        auto *op = desc->getOperand(i);
+        if (!op) continue;
+        if (llvm::isa<llvm::MDString>(op)) {
+            auto md = llvm::cast<llvm::MDString>(op);
+            var_name = md->getString().str();
+            break;
+        }
+    }
+    // try to guess the actual RTL name
+    // obtain the value and see the type
+    // for now we just hack it
+    if (var_name.find('[') != std::string::npos) {
+        // this is an auto variable
+        // very likely created from an array
+        value_name.append("_d0");
+    } else {
+        // normal wire
+        // need to follow the use
+        for (auto use = value->use_begin(); use != value->use_end(); use++) {
+            if (llvm::isa<llvm::LoadInst>(*use)) {
+                auto load = llvm::cast<llvm::LoadInst>(*use);
+                value_name = "ap_sig_allocacmp_" + load->getName().str();
+                break;
+            }
+        }
+    }
+
+    Variable var(var_name, value_name);
+    // compute the debugging scope
+    // for now we put everything in the same scope. Need to refactor this to compute
+    // actual debug scope
+    auto debug_loc = call_inst.getDebugLoc();
+    uint32_t line = debug_loc.getLine();
+    context.add_scope<DeclInstruction>(root_scope, var, line);
+}
+
 Scope *get_debug_scope(const llvm::Function *function, Context &context) {
     if (!function) return nullptr;
-    auto *root_scope = context.get_scope<Scope>(nullptr);
+    auto *root_scope = context.add_scope<Scope>(nullptr);
     std::unordered_map<const llvm::DIScope *, Scope *> scope_mapping;
+
+    std::unordered_set<uint32_t> lines;
 
     for (auto const &blk : *function) {
         for (auto const &instr : blk) {
             // we are dealing with old LLVM code
             // see the debug information here:
             // https://releases.llvm.org/3.1/docs/SourceLevelDebugging.html
-            if (!llvm::isa<llvm::CallInst>(instr)) continue;
-            auto const &call_inst = llvm::cast<llvm::CallInst>(instr);
-            auto const *called_function = call_inst.getCalledFunction();
-            if (!called_function) continue;
-            auto name = called_function->getName();
-            if (name != "llvm.dbg.declare") continue;
-
-            auto *value = llvm::cast<llvm::MDNode>(call_inst.getOperand(0))->getOperand(0);
-            auto *desc = llvm::cast<llvm::MDNode>(call_inst.getOperand(1));
-            auto num_op = desc->getNumOperands();
-            std::string var_name;
-            std::string value_name;
-
-            if (!value->hasName()) continue;
-            value_name = value->getName().str();
-
-            for (auto i = 0u; i < num_op; i++) {
-                auto *op = desc->getOperand(i);
-                if (!op) continue;
-                if (llvm::isa<llvm::MDString>(op)) {
-                    auto md = llvm::cast<llvm::MDString>(op);
-                    var_name = md->getString().str();
-                    break;
-                }
-            }
-            // try to guess the actual RTL name
-            // obtain the value and see the type
-            // for now we just hack it
-            if (var_name.find('[') != std::string::npos) {
-                // this is an auto variable
-                // very likely created from an array
-                value_name.append("_d0");
-            } else {
-                // normal wire
-                // need to follow the use
-                for (auto use = value->use_begin(); use != value->use_end(); use++) {
-                    if (llvm::isa<llvm::LoadInst>(*use)) {
-                        auto load = llvm::cast<llvm::LoadInst>(*use);
-                        value_name = "ap_sig_allocacmp_" + load->getName().str();
-                        break;
+            bool processed = false;
+            if (llvm::isa<llvm::CallInst>(instr)) {
+                auto const &call_inst = llvm::cast<llvm::CallInst>(instr);
+                auto const *called_function = call_inst.getCalledFunction();
+                if (called_function) {
+                    auto name = called_function->getName();
+                    if (name == "llvm.dbg.declare") {
+                        process_var_decl(call_inst, context, root_scope);
                     }
+                    processed = true;
                 }
             }
 
-            Variable var(var_name, value_name);
-            // compute the debugging scope
-            // for now we put everything in the same scope. Need to refactor this to compute
-            // actual debug scope
             auto debug_loc = instr.getDebugLoc();
-            uint32_t line = debug_loc.getLine();
-            context.get_scope<Instruction>(root_scope, var, line);
+            if (!processed) {
+                // normal block
+                auto line = debug_loc.getLine();
+                if (line > 0 && lines.find(line) == lines.end()) {
+                    context.add_scope<Instruction>(root_scope, line);
+                    lines.emplace(line);
+                }
+            }
 
             if (root_scope->filename.empty()) {
                 // for now, we assume there is only one filename
                 auto *node = debug_loc.getAsMDNode(*get_llvm_context());
+                if (!node) continue;
                 auto loc = llvm::DILocation(node);
                 root_scope->filename =
                     resolve_filename(loc.getFilename().str(), loc.getDirectory().str());
