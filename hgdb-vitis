@@ -41,7 +41,6 @@ class DesignInfo:
     def __init__(self, solution):
         self.__solution = solution
         self.__parse_design_xml()
-        self.top_name = ""
 
     def __parse_design_xml(self):
         xml_files = list(pathlib.Path(self.__solution).rglob("*.design.xml"))
@@ -185,15 +184,23 @@ class DesignInfo:
             tables[module_name] = scope.serialize()
 
         res = "{\"generator\":\"vitis\",\"table\":["
-        i = 1
+        count = 1
         for module_name, s in tables.items():
             res += "{"
-            res += "\"type\": \"module\", \"name\":\"" + module_name + "\",\"scope\":[" + s + "]"
-            res += "}"
-            if i != len(tables):
+            res += "\"type\":\"module\",\"name\":\"" + module_name + "\",\"scope\":[" + s + "],\"instances\":["
+            # generate instances
+            instances = self.design_hierarchy[module_name]
+            for i, inst in enumerate(instances):
+                res += "{\"name\":\"" + inst.instance_name + "\","
+                res += "\"module\":\"" + inst.module_name + "\"}"
+                if i != (len(instances)) - 1:
+                    res += ","
+            # no variables for now since most of them are C functions
+            res += "],\"variables\":[]}"
+            if count != len(tables):
                 res += ","
-            i += 1
-        res += f"],""top"":"""f"{self.top_name}""}"
+            count += 1
+        res += "],\"top\":\"" + self.top_name + "\"}"
 
         if len(output) > 0:
             with open(output, "w+") as f:
