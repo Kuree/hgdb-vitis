@@ -32,10 +32,14 @@ void bind_llvm(py::module &m) {
         .def("get_instr_loc", &get_instr_loc, py::return_value_policy::reference_internal)
         .def("get_contained_functions", &get_contained_functions)
         .def_property_readonly("demangled_name", &get_demangled_name)
-        .def_property_readonly("name", py::overload_cast<const llvm::Function *>(&get_name)));
+        .def_property_readonly("name", py::overload_cast<const llvm::Function *>(&get_name))
+        .def("get_debug_scope", &get_debug_scope);
 }
+
+void bind_scope(py::module &m) { py::class_<Scope>(m, "Scope"); }
 
 PYBIND11_MODULE(vitis, m) {
     bind_llvm(m);
+    bind_scope(m);
     m.def("parse_llvm_bitcode", &parse_llvm_bitcode, py::return_value_policy::reference);
 }

@@ -179,24 +179,9 @@ class DesignInfo:
 
     def __compute_variable_mapping(self):
         for module_name, module in ModuleInfo.modules.items():
-            for state_id, state_info in module.state_infos.items():
-                function = module.function
-                instructions = self.__get_state_related_instr(module_name, function, state_id)
-                for instr in instructions:
-                    # due to the transformation, we may not find a direct matching instruction
-                    # we use the alloc instruction, which remains regardless the optimization
-                    alloc = instr.prev_alloc
-                    while alloc is not None:
-                        # notice that this is from the debug build!
-                        # if the code is SSA-transformed, which I think it is, the allocation should be unique
-                        if state_info.module is None:
-                            break
-                        # find one. need to find what's actually called in RTL,
-                        # which is very tricky since Xilinx doesn't open-source their stuff
-                        rtl_name = alloc.rtl_name
-                        if rtl_name:
-                            print(rtl_name)
-                        alloc = alloc.prev_alloc
+            function = module.function
+            scope = function.get_debug_scope()
+            print(scope)
 
 
 def get_args():

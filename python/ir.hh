@@ -2,8 +2,10 @@
 #define HGDB_VITIS_IR_HH
 
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "llvm/Module.h"
 
@@ -36,5 +38,26 @@ const llvm::Instruction *find_matching_instr(const llvm::Function *function,
 std::string guess_rtl_name(const llvm::Instruction *instruction);
 
 llvm::Module *parse_llvm_bitcode(const std::string &path);
+
+// debugging scopes
+struct Variable {
+    std::string name;
+    std::string rtl;
+};
+
+struct Instruction {
+    // basically a line
+    Variable var;
+
+    uint32_t line = 0;
+};
+
+class Scope {
+public:
+    std::vector<Scope> scopes;
+    std::string filename;
+};
+
+Scope get_debug_scope(const llvm::Function *function);
 
 #endif  // HGDB_VITIS_IR_HH

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <unordered_set>
 
+#include "llvm/ADT/StringMap.h"
 #include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Instructions.h"
 #include "llvm/LLVMContext.h"
@@ -208,4 +209,62 @@ llvm::Module *parse_llvm_bitcode(const std::string &path) {
         std::cerr << error.getMessage() << std::endl;
     }
     return module;
+}
+
+Scope get_debug_scope(const llvm::Function *function) {
+    if (!function) return {};
+    Scope res;
+    for (auto const &blk : *function) {
+        for (auto const &instr : blk) {
+            // we are dealing with old LLVM code
+            // see the debug information here:
+            // https://releases.llvm.org/3.1/docs/SourceLevelDebugging.html
+            if (!llvm::isa<llvm::CallInst>(instr)) continue;
+            auto const &call_inst = llvm::cast<llvm::CallInst>(instr);
+            auto const *called_function = call_inst.getCalledFunction();
+            if (!called_function) continue;
+            auto name = called_function->getName();
+            if (name != "llvm.dbg.declare") continue;
+
+            auto *value = llvm::cast<llvm::MDNode>(call_inst.getOperand(0))->getOperand(0);
+            auto *desc = llvm::cast<llvm::MDNode>(call_inst.getOperand(1));
+            auto num_op = desc->getNumOperands();
+            std::string var_name;
+            std::string value_name;
+
+            if (!value->hasName()) continue;
+            value_name = value->getName().str();
+
+            for (auto i = 0u; i < num_op; i++) {
+                auto *op = desc->getOperand(i);
+                if (!llvm::isa<llvm::MDString>(op)) continue;
+                auto md = llvm::cast<llvm::MDString>(op);
+                var_name = md->getString().str();
+                break;
+            }
+            // try to guess the actual RTL name
+            // obtain the value and see the type
+            // TODO: llvm gives DW tag to both array and variable. need to figure out a way
+            //   to tell them apart
+            auto di = llvm::DIDescriptor(desc);
+            auto tag = di.getTag();
+            if (tag & llvm::dwarf::llvm_dwarf_constants::DW_TAG_auto_variable) {
+                // this is an auto variable
+                // very likely created from an array
+                value_name.append("_d0");
+            } else {
+                // normal wire
+                // need to follow the use
+                for (auto use = value->use_begin(); use != value->use_end(); use++) {
+                    if (llvm::isa<llvm::LoadInst>(*use)) {
+                        auto load = llvm::cast<llvm::LoadInst>(*use);
+                        value_name = "ap_sig_allocacmp_" + load->getName().str();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    return res;
 }
