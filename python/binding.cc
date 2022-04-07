@@ -37,7 +37,7 @@ void bind_llvm(py::module &m) {
 }
 
 void bind_scope(py::module &m) {
-    py::class_<Scope>(m, "Scope");
+    py::class_<Scope>(m, "Scope").def("serialize", &Scope::serialize);
     py::class_<Context>(m, "Context").def(py::init<>());
 }
 

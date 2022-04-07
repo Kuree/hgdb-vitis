@@ -58,6 +58,11 @@ public:
     explicit Scope(const Scope *parent_scope) : parent_scope(parent_scope) {}
 
     [[nodiscard]] virtual std::string type() const { return "block"; }
+
+    [[nodiscard]] std::string serialize() const;
+
+private:
+    [[nodiscard]] virtual std::string serialize_member() const { return {}; }
 };
 
 class Instruction : public Scope {
@@ -67,6 +72,8 @@ public:
     Instruction(const Scope *parent_scope, uint32_t line) : Scope(parent_scope), line(line) {}
 
     [[nodiscard]] std::string type() const override { return "none"; }
+
+    [[nodiscard]] std::string serialize_member() const override;
 };
 
 class DeclInstruction : public Instruction {
@@ -78,6 +85,8 @@ public:
         : Instruction(parent_scope, line), var(std::move(var)) {}
 
     [[nodiscard]] std::string type() const override { return "decl"; }
+
+    [[nodiscard]] std::string serialize_member() const override;
 };
 
 class Context {

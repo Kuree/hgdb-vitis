@@ -293,3 +293,40 @@ Scope *get_debug_scope(const llvm::Function *function, Context &context) {
 
     return root_scope;
 }
+
+// NOLINTNEXTLINE
+std::string Scope::serialize() const {
+    std::stringstream ss;
+    ss << "{";
+    ss << R"("type":")" << type() << R"(")";
+    if (!scopes.empty()) {
+        ss << R"(,"scope":[)";
+        for (auto i = 0u; i < scopes.size(); i++) {
+            auto s = scopes[i]->serialize();
+            ss << s;
+            if (i != (scopes.size() - 1)) {
+                ss << ",";
+            }
+        }
+        ss << "]";
+    }
+    if (!filename.empty()) {
+        ss << R"(,"filename":")" << filename << '"';
+    }
+    auto member = serialize_member();
+    if (!member.empty()) {
+        ss << "," << member;
+    }
+    ss << "}";
+    return ss.str();
+}
+
+std::string Instruction::serialize_member() const { return R"("line":)" + std::to_string(line); }
+
+std::string DeclInstruction::serialize_member() const {
+    auto base = Instruction::serialize_member();
+    base.append(R"(,"variable":{"name":")").append(var.name).append(R"(",)");
+    base.append(R"("value":")").append(var.rtl).append(R"(",)");
+    base.append(R"("rtl":true})");
+    return base;
+}
