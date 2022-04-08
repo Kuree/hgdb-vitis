@@ -288,6 +288,8 @@ Scope *get_debug_scope(const llvm::Function *function, Context &context) {
             // invalid
             if (!res) continue;
 
+            res->instruction = &instr;
+
             // get debug information
             auto loc = llvm::DILocation(node);
             auto resolved_filename =
@@ -332,6 +334,16 @@ std::string Scope::serialize() const {
     if (!member.empty()) {
         ss << "," << member;
     }
+    if (!state_ids.empty()) {
+        ss << R"(,"condition":")";
+        for (auto i = 0u; i < state_ids.size(); i++) {
+            ss << "(ap_CS_fsm[" << (state_ids[i] - 1) << "])";
+            if (i != (state_ids.size() - 1)) {
+                ss << "||";
+            }
+        }
+        ss << '"';
+    }
     ss << "}";
     return ss.str();
 }
@@ -369,7 +381,8 @@ void Scope::bind_state(const std::map<uint32_t, StateInfo> &state_infos) {
                 return std::any_of(
                     info.instructions.begin(), info.instructions.end(), [scope](auto const &iter) {
                         auto const &loc = iter.second;
-                        return loc.filename == scope->get_raw_filename() && loc.line == scope->line;
+                        return loc.line > 0 && loc.filename == scope->get_raw_filename() &&
+                               loc.line == scope->line;
                     });
             },
             child_scopes);
