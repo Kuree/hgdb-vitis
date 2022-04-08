@@ -202,7 +202,7 @@ class DesignInfo:
             count += 1
         res += "],\"top\":\"" + self.top_name + "\"}"
 
-        if len(output) > 0:
+        if output:
             with open(output, "w+") as f:
                 f.write(res)
 
