@@ -9,13 +9,6 @@ from typing import List, Dict
 import xml.etree.ElementTree as ElementTree
 
 
-class StateInfo:
-    def __init__(self, state_id: int):
-        self.id = state_id
-        self.instructions = []
-        self.module = None
-
-
 class ModuleInfo:
     modules: Dict[str, "ModuleInfo"] = {}
 
@@ -24,7 +17,7 @@ class ModuleInfo:
 
         self.function = None
 
-        self.state_infos: Dict[int, StateInfo] = {}
+        self.state_infos: Dict[int, vitis.StateInfo] = {}
 
 
 class InstanceInfo:
@@ -130,7 +123,7 @@ class DesignInfo:
                 state_id = m.group("id")
                 if state_id:
                     state_id = int(state_id)
-                    current_state = StateInfo(state_id)
+                    current_state = vitis.StateInfo(state_id)
                     module_state_info[state_id] = current_state
                     continue
             else:
@@ -142,12 +135,9 @@ class DesignInfo:
                         line_idx = debug.rindex(":")
                         filename = debug[:line_idx]
                         line_num = int(debug[line_idx + 1:])
-                        debug = (filename, line_num)
-                    current_state.instructions.append((instr, debug))
-
-        # match state with module
-        for state_id, state_info in module_state_info.items():
-            state_info.module = ModuleInfo.modules[module_name]
+                        current_state.add_instr(instr, filename, line_num)
+                    else:
+                        current_state.add_instr(instr)
 
     @staticmethod
     def __get_state_related_instr(module_name, function, state_id):
@@ -181,6 +171,7 @@ class DesignInfo:
         for module_name, module in ModuleInfo.modules.items():
             function = module.function
             scope = function.get_debug_scope(context)
+            scope.bind_state(module.state_infos)
             tables[module_name] = scope.serialize()
 
         res = "{\"generator\":\"vitis\",\"table\":["
@@ -211,6 +202,7 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("solution", type=str, help="Xilinx Vitis solution dir")
     parser.add_argument("-o", dest="output", type=str, help="Output symbol table name")
+    parser.add_argument("-r", "--remap", dest="remap")
     args = parser.parse_args()
     return args
 

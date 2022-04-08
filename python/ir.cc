@@ -13,6 +13,7 @@
 #include "llvm/Support/DebugLoc.h"
 #include "llvm/Support/IRReader.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/raw_ostream.h"
 
 llvm::LLVMContext *get_llvm_context() {
     static std::unique_ptr<llvm::LLVMContext> context;
@@ -198,14 +199,14 @@ std::string resolve_filename(const std::string &filename, const std::string &dir
     return res.string();
 }
 
-void process_var_decl(const llvm::CallInst &call_inst, Context &context, Scope *root_scope) {
+Scope *process_var_decl(const llvm::CallInst &call_inst, Context &context, Scope *root_scope) {
     auto *value = llvm::cast<llvm::MDNode>(call_inst.getOperand(0))->getOperand(0);
     auto *desc = llvm::cast<llvm::MDNode>(call_inst.getOperand(1));
     auto num_op = desc->getNumOperands();
     std::string var_name;
     std::string value_name;
 
-    if (!value->hasName()) return;
+    if (!value->hasName()) return nullptr;
     value_name = value->getName().str();
 
     for (auto i = 0u; i < num_op; i++) {
@@ -242,7 +243,8 @@ void process_var_decl(const llvm::CallInst &call_inst, Context &context, Scope *
     // actual debug scope
     auto debug_loc = call_inst.getDebugLoc();
     uint32_t line = debug_loc.getLine();
-    context.add_scope<DeclInstruction>(root_scope, var, line);
+    auto *s = context.add_scope<DeclInstruction>(root_scope, var, line);
+    return s;
 }
 
 Scope *get_debug_scope(const llvm::Function *function, Context &context) {
@@ -257,36 +259,49 @@ Scope *get_debug_scope(const llvm::Function *function, Context &context) {
             // we are dealing with old LLVM code
             // see the debug information here:
             // https://releases.llvm.org/3.1/docs/SourceLevelDebugging.html
-            bool processed = false;
+            auto debug_loc = instr.getDebugLoc();
+            auto *node = debug_loc.getAsMDNode(*get_llvm_context());
+            if (!node) continue;
+
+            Scope *res = nullptr;
             if (llvm::isa<llvm::CallInst>(instr)) {
                 auto const &call_inst = llvm::cast<llvm::CallInst>(instr);
                 auto const *called_function = call_inst.getCalledFunction();
                 if (called_function) {
                     auto name = called_function->getName();
                     if (name == "llvm.dbg.declare") {
-                        process_var_decl(call_inst, context, root_scope);
+                        res = process_var_decl(call_inst, context, root_scope);
                     }
-                    processed = true;
                 }
             }
 
-            auto debug_loc = instr.getDebugLoc();
-            if (!processed) {
+            if (!res) {
                 // normal block
                 auto line = debug_loc.getLine();
                 if (line > 0 && lines.find(line) == lines.end()) {
-                    context.add_scope<Instruction>(root_scope, line);
+                    auto *s = context.add_scope<Instruction>(root_scope, line);
                     lines.emplace(line);
+                    res = s;
                 }
             }
 
+            // invalid
+            if (!res) continue;
+
+            // get debug information
+            auto loc = llvm::DILocation(node);
+            auto resolved_filename =
+                resolve_filename(loc.getFilename().str(), loc.getDirectory().str());
+            auto raw_filename = loc.getFilename().str();
+
             if (root_scope->filename.empty()) {
-                // for now, we assume there is only one filename
-                auto *node = debug_loc.getAsMDNode(*get_llvm_context());
-                if (!node) continue;
-                auto loc = llvm::DILocation(node);
-                root_scope->filename =
-                    resolve_filename(loc.getFilename().str(), loc.getDirectory().str());
+                root_scope->filename = resolved_filename;
+                root_scope->raw_filename = raw_filename;
+            }
+
+            if (res->get_filename() != resolved_filename) {
+                res->filename = resolved_filename;
+                res->raw_filename = raw_filename;
             }
         }
     }
@@ -321,6 +336,94 @@ std::string Scope::serialize() const {
     return ss.str();
 }
 
+// NOLINTNEXTLINE
+Scope *Scope::find(const std::function<bool(Scope *)> &predicate) {
+    if (predicate(this)) return this;
+    for (auto *s : scopes) {
+        auto *p = s->find(predicate);
+        if (p) return p;
+    }
+    return nullptr;
+}
+
+// NOLINTNEXTLINE
+void Scope::find_all(const std::function<bool(Scope *)> &predicate, std::vector<Scope *> &res) {
+    if (predicate(this)) res.emplace_back(this);
+    for (auto *s : scopes) {
+        s->find_all(predicate, res);
+    }
+}
+
+void Scope::bind_state(const std::map<uint32_t, StateInfo> &state_infos) {
+    // we bind state to scope
+    // if the state info has line number, we use that for matching
+    // if not, we brute-force to match the instruction string
+    // I miss C++20 features. structured bindings cannot be captured by lambda expressions until
+    // C++20
+    for (auto const &iter : state_infos) {
+        auto state_id = iter.first;
+        auto const &info = iter.second;
+        std::vector<Scope *> child_scopes;
+        find_all(
+            [&info](Scope *scope) {
+                return std::any_of(
+                    info.instructions.begin(), info.instructions.end(), [scope](auto const &iter) {
+                        auto const &loc = iter.second;
+                        return loc.filename == scope->get_raw_filename() && loc.line == scope->line;
+                    });
+            },
+            child_scopes);
+        if (!child_scopes.empty()) {
+            // found it
+            for (auto *scope : child_scopes) {
+                scope->state_ids.emplace_back(state_id);
+            }
+        } else {
+            // brute-force search instructions
+            find_all(
+                [&info](Scope *scope) {
+                    return std::any_of(info.instructions.begin(), info.instructions.end(),
+                                       [scope](auto const &iter) {
+                                           auto const &instr = iter.first;
+                                           auto const scope_instr = scope->get_instr_string();
+                                           return instr == scope_instr;
+                                       });
+                },
+                child_scopes);
+
+            for (auto *scope : child_scopes) {
+                scope->state_ids.emplace_back(state_id);
+            }
+        }
+    }
+}
+
+// NOLINTNEXTLINE
+std::string Scope::get_filename() const {
+    if (filename.empty()) {
+        return parent_scope ? parent_scope->get_filename() : "";
+    } else {
+        return filename;
+    }
+}
+
+// NOLINTNEXTLINE
+std::string Scope::get_raw_filename() const {
+    if (raw_filename.empty()) {
+        return parent_scope ? parent_scope->get_raw_filename() : "";
+    } else {
+        return raw_filename;
+    }
+}
+
+[[nodiscard]] std::string Scope::get_instr_string() const {
+    if (!instruction) return "";
+    std::string buffer;
+    llvm::raw_string_ostream stream(buffer);
+    instruction->print(stream);
+    return buffer;
+}
+
 std::string Instruction::serialize_member() const { return R"("line":)" + std::to_string(line); }
 
 std::string DeclInstruction::serialize_member() const {
@@ -330,3 +433,11 @@ std::string DeclInstruction::serialize_member() const {
     base.append(R"("rtl":true})");
     return base;
 }
+
+void StateInfo::add_instruction(const std::string &instr, const std::string &filename,
+                                uint32_t line) {
+    LineInfo info{filename, line};
+    instructions.emplace_back(std::make_pair(instr, info));
+}
+
+void StateInfo::add_instruction(const std::string &instr) { add_instruction(instr, "", 0); }

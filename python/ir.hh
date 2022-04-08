@@ -5,6 +5,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -48,10 +49,30 @@ struct Variable {
     Variable(std::string name, std::string rtl) : name(std::move(name)), rtl(std::move(rtl)) {}
 };
 
+struct StateInfo {
+    uint32_t id;
+    struct LineInfo {
+        std::string filename;
+        uint32_t line;
+    };
+    std::vector<std::pair<std::string, LineInfo>> instructions;
+
+    explicit StateInfo(uint32_t id) : id(id) {}
+
+    void add_instruction(const std::string &instr, const std::string &filename, uint32_t line);
+    void add_instruction(const std::string &instr);
+};
+
 class Scope {
 public:
     std::vector<Scope *> scopes;
     std::string filename;
+    std::string raw_filename;
+    uint32_t line = 0;
+
+    // one single line can have multiple ids
+    std::vector<uint32_t> state_ids;
+    const llvm::Instruction *instruction = nullptr;
 
     const Scope *parent_scope;
 
@@ -61,15 +82,23 @@ public:
 
     [[nodiscard]] std::string serialize() const;
 
+    Scope *find(const std::function<bool(Scope *)> &predicate);
+    void find_all(const std::function<bool(Scope *)> &predicate, std::vector<Scope *> &res);
+    void bind_state(const std::map<uint32_t, StateInfo> &state_infos);
+
+    [[nodiscard]] std::string get_filename() const;
+    [[nodiscard]] std::string get_raw_filename() const;
+    [[nodiscard]] std::string get_instr_string() const;
+
 private:
     [[nodiscard]] virtual std::string serialize_member() const { return {}; }
 };
 
 class Instruction : public Scope {
 public:
-    uint32_t line;
-
-    Instruction(const Scope *parent_scope, uint32_t line) : Scope(parent_scope), line(line) {}
+    Instruction(const Scope *parent_scope, uint32_t line) : Scope(parent_scope) {
+        this->line = line;
+    }
 
     [[nodiscard]] std::string type() const override { return "none"; }
 

@@ -37,8 +37,15 @@ void bind_llvm(py::module &m) {
 }
 
 void bind_scope(py::module &m) {
-    py::class_<Scope>(m, "Scope").def("serialize", &Scope::serialize);
+    py::class_<Scope>(m, "Scope")
+        .def("serialize", &Scope::serialize)
+        .def("bind_state", &Scope::bind_state);
     py::class_<Context>(m, "Context").def(py::init<>());
+    py::class_<StateInfo>(m, "StateInfo")
+        .def(py::init<uint32_t>())
+        .def("add_instr", py::overload_cast<const std::string &>(&StateInfo::add_instruction))
+        .def("add_instr", py::overload_cast<const std::string &, const std::string &, uint32_t>(
+                              &StateInfo::add_instruction));
 }
 
 PYBIND11_MODULE(vitis, m) {
