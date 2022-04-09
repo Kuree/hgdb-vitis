@@ -46,6 +46,10 @@ void bind_scope(py::module &m) {
         .def("add_instr", py::overload_cast<const std::string &>(&StateInfo::add_instruction))
         .def("add_instr", py::overload_cast<const std::string &, const std::string &, uint32_t>(
                               &StateInfo::add_instruction));
+
+    py::class_<SerializationOptions>(m, "SerializationOptions")
+        .def(py::init<>())
+        .def("add_mapping", &SerializationOptions::add_mapping);
 }
 
 PYBIND11_MODULE(vitis, m) {

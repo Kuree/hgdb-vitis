@@ -165,8 +165,12 @@ class DesignInfo:
 
         return res
 
-    def dump_symbol_table(self, output):
+    def dump_symbol_table(self, output, remap):
         context = vitis.Context()
+        options = vitis.SerializationOptions()
+        for b, a in remap.items():
+            options.add_mapping(b, a)
+
         tables = {}
         for module_name, module in ModuleInfo.modules.items():
             function = module.function
@@ -207,11 +211,24 @@ def get_args():
     return args
 
 
+def preprocess_remap(remap):
+    if remap is None:
+        return {}
+    else:
+        groups = remap.split(";")
+        res = {}
+        for m in groups:
+            g = m.split(":")
+            assert len(g) == 2, "Invalid remap option " + remap
+            res[g[0]] = g[1]
+        return res
+
+
 def main():
     args = get_args()
     solution = args.solution
     info = DesignInfo(solution)
-    info.dump_symbol_table(args.output)
+    info.dump_symbol_table(args.output, args.remap)
 
 
 if __name__ == "__main__":

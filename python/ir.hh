@@ -63,6 +63,12 @@ struct StateInfo {
     void add_instruction(const std::string &instr);
 };
 
+struct SerializationOptions {
+    std::map<std::string, std::string> remap_filename;
+
+    void add_mapping(const std::string &before, std::string &after);
+};
+
 class Scope {
 public:
     std::vector<Scope *> scopes;
@@ -80,7 +86,7 @@ public:
 
     [[nodiscard]] virtual std::string type() const { return "block"; }
 
-    [[nodiscard]] std::string serialize() const;
+    [[nodiscard]] std::string serialize(const SerializationOptions &options) const;
 
     Scope *find(const std::function<bool(Scope *)> &predicate);
     void find_all(const std::function<bool(Scope *)> &predicate, std::vector<Scope *> &res);

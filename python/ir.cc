@@ -311,15 +311,45 @@ Scope *get_debug_scope(const llvm::Function *function, Context &context) {
     return root_scope;
 }
 
+std::string remap_filename(const std::string &filename, const SerializationOptions &options) {
+    // we don't expect this kind of stuff to be done in parallel
+    static std::unordered_map<std::string, std::string> mapped_filename;
+    if (mapped_filename.find(filename) != mapped_filename.end()) {
+        return mapped_filename.at(filename);
+    }
+
+    std::filesystem::path target_filename = filename;
+    for (auto const &[before, after] : options.remap_filename) {
+        std::filesystem::path path_before = before;
+        auto target_it = target_filename.begin();
+        bool match = true;
+        for (auto const &p : path_before) {
+            if (target_it == target_filename.end() || p != *target_it) {
+                match = false;
+                break;
+            }
+            target_it++;
+        }
+        if (!match) continue;
+
+        std::filesystem::path path_after = after;
+        while (target_it != target_filename.end()) {
+            path_after = path_after / *target_it;
+        }
+        return path_after.string();
+    }
+    return filename;
+}
+
 // NOLINTNEXTLINE
-std::string Scope::serialize() const {
+std::string Scope::serialize(const SerializationOptions &options) const {
     std::stringstream ss;
     ss << "{";
     ss << R"("type":")" << type() << R"(")";
     if (!scopes.empty()) {
         ss << R"(,"scope":[)";
         for (auto i = 0u; i < scopes.size(); i++) {
-            auto s = scopes[i]->serialize();
+            auto s = scopes[i]->serialize(options);
             ss << s;
             if (i != (scopes.size() - 1)) {
                 ss << ",";
@@ -327,8 +357,10 @@ std::string Scope::serialize() const {
         }
         ss << "]";
     }
+
     if (!filename.empty()) {
-        ss << R"(,"filename":")" << filename << '"';
+        auto fn = remap_filename(filename, options);
+        ss << R"(,"filename":")" << fn << '"';
     }
     auto member = serialize_member();
     if (!member.empty()) {
@@ -454,3 +486,7 @@ void StateInfo::add_instruction(const std::string &instr, const std::string &fil
 }
 
 void StateInfo::add_instruction(const std::string &instr) { add_instruction(instr, "", 0); }
+
+void SerializationOptions::add_mapping(const std::string &before, std::string &after) {
+    remap_filename.emplace(before, after);
+}
