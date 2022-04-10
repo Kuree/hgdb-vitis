@@ -176,7 +176,7 @@ class DesignInfo:
             function = module.function
             scope = function.get_debug_scope(context)
             scope.bind_state(module.state_infos)
-            tables[module_name] = scope.serialize()
+            tables[module_name] = scope.serialize(options)
 
         res = "{\"generator\":\"vitis\",\"table\":["
         count = 1
@@ -228,7 +228,7 @@ def main():
     args = get_args()
     solution = args.solution
     info = DesignInfo(solution)
-    info.dump_symbol_table(args.output, args.remap)
+    info.dump_symbol_table(args.output, preprocess_remap(args.remap))
 
 
 if __name__ == "__main__":
