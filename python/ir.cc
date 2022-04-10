@@ -319,6 +319,7 @@ std::string remap_filename(const std::string &filename, const SerializationOptio
     }
 
     std::filesystem::path target_filename = filename;
+    std::string result = filename;
     for (auto const &[before, after] : options.remap_filename) {
         std::filesystem::path path_before = before;
         auto target_it = target_filename.begin();
@@ -335,10 +336,12 @@ std::string remap_filename(const std::string &filename, const SerializationOptio
         std::filesystem::path path_after = after;
         while (target_it != target_filename.end()) {
             path_after = path_after / *target_it;
+            target_it++;
         }
-        return path_after.string();
+        result = path_after.string();
+        mapped_filename.emplace(filename, result);
     }
-    return filename;
+    return result;
 }
 
 // NOLINTNEXTLINE

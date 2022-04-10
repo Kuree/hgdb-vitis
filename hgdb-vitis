@@ -211,6 +211,12 @@ def get_args():
     return args
 
 
+def strip_end(string, c):
+    while string and string[-1] == c:
+        string = string[:-1]
+    return string
+
+
 def preprocess_remap(remap):
     if remap is None:
         return {}
@@ -220,7 +226,11 @@ def preprocess_remap(remap):
         for m in groups:
             g = m.split(":")
             assert len(g) == 2, "Invalid remap option " + remap
-            res[g[0]] = g[1]
+            before_name = g[0]
+            after_name = g[1]
+            before_name = strip_end(before_name, '/')
+            after_name = strip_end(after_name, '/')
+            res[before_name] = after_name
         return res
 
 
