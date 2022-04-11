@@ -39,7 +39,8 @@ void bind_llvm(py::module &m) {
 void bind_scope(py::module &m) {
     py::class_<Scope>(m, "Scope")
         .def("serialize", &Scope::serialize)
-        .def("bind_state", &Scope::bind_state);
+        .def("bind_state", &Scope::bind_state)
+        .def_readonly("instruction", &Scope::instruction);
     py::class_<Context>(m, "Context").def(py::init<>());
     py::class_<StateInfo>(m, "StateInfo")
         .def(py::init<uint32_t>())
@@ -57,6 +58,7 @@ void bind_scope(py::module &m) {
         .def_readonly("width", &SignalInfo::width);
 
     m.def("merge_states", &merge_states);
+    m.def("reorganize_scopes", &reorganize_scopes);
 }
 
 PYBIND11_MODULE(vitis, m) {

@@ -98,6 +98,7 @@ public:
     Scope *find(const std::function<bool(Scope *)> &predicate);
     void find_all(const std::function<bool(Scope *)> &predicate, std::vector<Scope *> &res);
     void bind_state(const std::map<uint32_t, StateInfo> &state_infos);
+    void add_scope(Scope *scope);
 
     [[nodiscard]] std::string get_filename() const;
     [[nodiscard]] std::string get_raw_filename() const;
@@ -148,7 +149,10 @@ Scope *get_debug_scope(const llvm::Function *function, Context &context);
 
 // create new state info since Python doesn't work well with pass by reference via pybind
 std::map<uint32_t, StateInfo> merge_states(const std::map<uint32_t, StateInfo> &state_infos,
-                  const std::map<std::string, SignalInfo> &signals,
-                  const std::string &module_name);
+                                           const std::map<std::string, SignalInfo> &signals,
+                                           const std::string &module_name);
+
+// rearrange scopes based on the function boundary
+void reorganize_scopes(Context &context, Scope *scope);
 
 #endif  // HGDB_VITIS_IR_HH
