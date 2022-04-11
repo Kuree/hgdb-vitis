@@ -19,6 +19,8 @@ class ModuleInfo:
 
         self.state_infos: Dict[int, vitis.StateInfo] = {}
 
+        self.signals: Dict[str, vitis.SignalInfo] = {}
+
 
 class InstanceInfo:
     def __init__(self, module_name, instance_name):
@@ -55,6 +57,7 @@ class DesignInfo:
         self.__build_instance_hierarchy(top_module_name, top_module)
         self.__parse_llvm_bc()
         self.__parse_state_transition(self.top_name)
+        self.__parse_signal_names(self.top_name)
 
     def __build_instance_hierarchy(self, parent_name, node):
         inst_list = node.find("InstancesList")
@@ -89,6 +92,42 @@ class DesignInfo:
             ModuleInfo.modules[module_name].function = func
         ModuleInfo.modules[self.top_name].function = top_function
 
+    def __get_report_lines(self, module_name):
+        rpt_path = os.path.join(self.__solution, ".autopilot", "db", module_name + ".verbose.rpt")
+        assert os.path.exists(rpt_path), "Unable to find verbose report " + rpt_path
+        with open(rpt_path, "r") as f:
+            rpt_lines = f.readlines()
+        return rpt_lines
+
+    def __parse_signal_names(self, module_name):
+        # this is similar to the state transition since they're in the same file
+        instances = self.design_hierarchy[module_name]
+        for inst in instances:
+            m_name = inst.module_name
+            # recursively parse it
+            self.__parse_signal_names(m_name)
+
+        module_signals = ModuleInfo.modules[module_name].signals
+        rpt_lines = self.__get_report_lines(module_name)
+        register_mode = 0
+        for line in rpt_lines:
+            line = line.strip()
+            if register_mode == 0:
+                if line == "* Register:":
+                    register_mode += 1
+            elif register_mode <= 3:
+                register_mode += 1
+            elif register_mode == 4:
+                if line[0] == '+':
+                    # we're done
+                    break
+                tokens = list(filter(lambda x: x, line.split("|")))
+                assert len(tokens) == 5, "Invalid register line " + line
+                name = tokens[0].strip()
+                width = int(tokens[3].strip())
+                signal = vitis.SignalInfo(name, width)
+                module_signals[name] = signal
+
     def __parse_state_transition(self, module_name):
         # we need to parse state transition for every module since they are independent
 
@@ -100,10 +139,7 @@ class DesignInfo:
             self.__parse_state_transition(m_name)
 
         module_state_info = ModuleInfo.modules[module_name].state_infos
-        rpt_path = os.path.join(self.__solution, ".autopilot", "db", module_name + ".verbose.rpt")
-        assert os.path.exists(rpt_path), "Unable to find top verbose report"
-        with open(rpt_path, "r") as f:
-            rpt_lines = f.readlines()
+        rpt_lines = self.__get_report_lines(module_name)
         for i, line in enumerate(rpt_lines):
             if line.strip() == "* FSM state operations:":
                 rpt_lines = rpt_lines[i + 1:]

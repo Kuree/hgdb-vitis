@@ -63,6 +63,13 @@ struct StateInfo {
     void add_instruction(const std::string &instr);
 };
 
+struct SignalInfo {
+    std::string name;
+    uint32_t width;
+
+    SignalInfo(std::string name, uint32_t width) : name(std::move(name)), width(width) {}
+};
+
 struct SerializationOptions {
     std::map<std::string, std::string> remap_filename;
 

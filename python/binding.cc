@@ -50,6 +50,11 @@ void bind_scope(py::module &m) {
     py::class_<SerializationOptions>(m, "SerializationOptions")
         .def(py::init<>())
         .def("add_mapping", &SerializationOptions::add_mapping);
+
+    py::class_<SignalInfo>(m, "SignalInfo")
+        .def(py::init<std::string, uint32_t>())
+        .def_readonly("name", &SignalInfo::name)
+        .def_readonly("width", &SignalInfo::width);
 }
 
 PYBIND11_MODULE(vitis, m) {
