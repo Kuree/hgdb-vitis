@@ -244,7 +244,7 @@ class DesignInfo:
             count += 1
         res += "],\"top\":\"" + self.top_name + "\""
         # clock attribute
-        res += "\"attributes\":[{\"name\":\"clock\",\"value\":\"" + self.top_name + ".ap_clk\"}]"
+        res += ",\"attributes\":[{\"name\":\"clock\",\"value\":\"" + self.top_name + ".ap_clk\"}]"
         res += "}"
 
         if output:

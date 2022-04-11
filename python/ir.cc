@@ -510,14 +510,15 @@ std::map<uint32_t, StateInfo> merge_states(const std::map<uint32_t, StateInfo> &
     if (num_states != state_infos.size()) {
         if (num_states == 1) {
             // merge states
-            StateInfo new_state(0);
+            StateInfo new_state(1);
             std::cout << "[Info] Merging states for " << module_name << " (" << state_infos.size()
                       << " -> 1)" << std::endl;
             for (auto const &[_, state] : state_infos) {
                 new_state.instructions.insert(new_state.instructions.end(),
                                               state.instructions.begin(), state.instructions.end());
             }
-            return {{0, new_state}};
+            // starts from 1
+            return {{1, new_state}};
         }
         throw std::runtime_error("Mismatch state information not implemented");
     }
