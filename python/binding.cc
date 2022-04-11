@@ -55,6 +55,8 @@ void bind_scope(py::module &m) {
         .def(py::init<std::string, uint32_t>())
         .def_readonly("name", &SignalInfo::name)
         .def_readonly("width", &SignalInfo::width);
+
+    m.def("merge_states", &merge_states);
 }
 
 PYBIND11_MODULE(vitis, m) {

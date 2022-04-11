@@ -146,4 +146,9 @@ private:
 
 Scope *get_debug_scope(const llvm::Function *function, Context &context);
 
+// create new state info since Python doesn't work well with pass by reference via pybind
+std::map<uint32_t, StateInfo> merge_states(const std::map<uint32_t, StateInfo> &state_infos,
+                  const std::map<std::string, SignalInfo> &signals,
+                  const std::string &module_name);
+
 #endif  // HGDB_VITIS_IR_HH

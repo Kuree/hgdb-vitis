@@ -493,3 +493,34 @@ void StateInfo::add_instruction(const std::string &instr) { add_instruction(inst
 void SerializationOptions::add_mapping(const std::string &before, std::string &after) {
     remap_filename.emplace(before, after);
 }
+
+std::map<uint32_t, StateInfo> merge_states(const std::map<uint32_t, StateInfo> &state_infos,
+                                           const std::map<std::string, SignalInfo> &signals,
+                                           const std::string &module_name) {
+    // notice that if the statement variable is only 1-bit, it means all the states are merged
+    // into one. Currently, we only support wither many to one mapping, or one-to-one mapping.
+    constexpr auto fsm_signal_name = "ap_CS_fsm";
+    if (signals.find(fsm_signal_name) == signals.end()) {
+        // no states found
+        std::cerr << "[Warning] no states found for " << module_name << std::endl;
+        return {};
+    }
+
+    auto num_states = signals.at(fsm_signal_name).width;
+    if (num_states != state_infos.size()) {
+        if (num_states == 1) {
+            // merge states
+            StateInfo new_state(0);
+            std::cout << "[Info] Merging states for " << module_name << " (" << state_infos.size()
+                      << " -> 1)" << std::endl;
+            for (auto const &[_, state] : state_infos) {
+                new_state.instructions.insert(new_state.instructions.end(),
+                                              state.instructions.begin(), state.instructions.end());
+            }
+            return {{0, new_state}};
+        }
+        throw std::runtime_error("Mismatch state information not implemented");
+    }
+    // no need to merge
+    return state_infos;
+}

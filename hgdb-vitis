@@ -58,6 +58,7 @@ class DesignInfo:
         self.__parse_llvm_bc()
         self.__parse_state_transition(self.top_name)
         self.__parse_signal_names(self.top_name)
+        self.__merge_module_states(self.top_name)
 
     def __build_instance_hierarchy(self, parent_name, node):
         inst_list = node.find("InstancesList")
@@ -174,6 +175,16 @@ class DesignInfo:
                         current_state.add_instr(instr, filename, line_num)
                     else:
                         current_state.add_instr(instr)
+
+    def __merge_module_states(self, module_name):
+        instances = self.design_hierarchy[module_name]
+        for inst in instances:
+            m_name = inst.module_name
+            self.__merge_module_states(m_name)
+
+        signals = ModuleInfo.modules[module_name].signals
+        info = ModuleInfo.modules[module_name].state_infos
+        ModuleInfo.modules[module_name].state_infos = vitis.merge_states(info, signals, module_name)
 
     @staticmethod
     def __get_state_related_instr(module_name, function, state_id):
