@@ -5,7 +5,6 @@ import argparse
 import pathlib
 import vitis
 import re
-from typing import List, Dict
 import xml.etree.ElementTree as ElementTree
 
 

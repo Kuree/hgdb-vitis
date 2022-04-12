@@ -575,11 +575,10 @@ std::unordered_map<const llvm::Function *, const llvm::Function *> get_split_fun
     return res;
 }
 
-void merge_scope(Scope *dst, Scope *target) {
+void merge_scope(Scope *dst, Scope *target) {}
 
-}
-
-std::map<std::string, Scope *> reorganize_scopes(const llvm::Module *module, Context &context,
+std::map<std::string, Scope *> reorganize_scopes(const llvm::Module *module,
+                                                 const std::set<std::string> &original_functions,
                                                  std::map<std::string, Scope *> scopes) {
     // we first need to establish the function hierarchy. i.e., which one is split from the
     // parent one

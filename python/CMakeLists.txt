@@ -1,5 +1,5 @@
 add_library(hgdb-vitis ir.cc)
-target_include_directories(hgdb-vitis PUBLIC ${LLVM_INCLUDE_DIRS})
+target_include_directories(hgdb-vitis PUBLIC ${LLVM0_INCLUDE_DIRS})
 target_link_libraries(hgdb-vitis PUBLIC llvm::bitcode llvm::core llvm::support llvm::analysis llvm::bitcode)
 set_property(TARGET hgdb-vitis PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_compile_options(hgdb-vitis PRIVATE -Wall -Wextra -Wpedantic -Werror -Wno-unused-parameter -Wno-deprecated-copy
@@ -12,3 +12,9 @@ target_link_libraries(vitis PUBLIC hgdb-vitis)
 ## Xilinx you should upgrade your LLVM toolchain!
 target_compile_options(vitis PRIVATE -Wall -Wextra -Wpedantic -Werror -Wno-unused-parameter -Wno-deprecated-copy
         -Wno-unused-local-typedefs)
+
+pybind11_add_module(vitis0 debug.cc)
+set_property(TARGET vitis0 PROPERTY POSITION_INDEPENDENT_CODE ON)
+llvm_map_components_to_libnames(llvm_libs support core irreader)
+target_link_libraries(vitis0 PUBLIC ${llvm_libs})
+target_include_directories(vitis0 PRIVATE ${LLVM_INCLUDE_DIRS})
