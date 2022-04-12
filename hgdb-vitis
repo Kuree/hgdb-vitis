@@ -95,7 +95,7 @@ class DesignInfo:
             # recursively parse it
             self.__parse_signal_names(m_name)
 
-        module_signals = vitis.ModuleInfo.get_module(module_name).signals
+        module_signals = {}
         rpt_lines = self.__get_report_lines(module_name)
         register_mode = 0
         for line in rpt_lines:
@@ -116,6 +116,8 @@ class DesignInfo:
                 signal = vitis.SignalInfo(name, width)
                 module_signals[name] = signal
 
+        vitis.ModuleInfo.get_module(module_name).signals = module_signals
+
     def __parse_state_transition(self, module_name):
         # we need to parse state transition for every module since they are independent
 
@@ -126,7 +128,7 @@ class DesignInfo:
             # recursively parse it
             self.__parse_state_transition(m_name)
 
-        module_state_info = vitis.ModuleInfo.get_module(module_name).state_infos
+        module_state_info = {}
         rpt_lines = self.__get_report_lines(module_name)
         for i, line in enumerate(rpt_lines):
             if line.strip() == "* FSM state operations:":
@@ -162,6 +164,8 @@ class DesignInfo:
                         current_state.add_instr(instr, filename, line_num)
                     else:
                         current_state.add_instr(instr)
+
+        vitis.ModuleInfo.get_module(module_name).state_infos = module_state_info
 
     def __merge_module_states(self, module_name):
         instances = self.design_hierarchy[module_name]
