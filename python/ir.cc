@@ -14,6 +14,8 @@
 #include "llvm/Support/IRReader.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Constants.h"
+
 
 llvm::LLVMContext *get_llvm_context() {
     static std::unique_ptr<llvm::LLVMContext> context;
@@ -210,13 +212,16 @@ Scope *process_var_decl(const llvm::CallInst &call_inst, Context &context, Scope
     if (!value->hasName()) return nullptr;
     value_name = value->getName().str();
 
+    uint32_t line_num = 0;
     for (auto i = 0u; i < num_op; i++) {
         auto *op = desc->getOperand(i);
         if (!op) continue;
-        if (llvm::isa<llvm::MDString>(op)) {
+        if (llvm::isa<llvm::MDString>(op) && var_name.empty()) {
             auto md = llvm::cast<llvm::MDString>(op);
             var_name = md->getString().str();
-            break;
+        } else if (i > 0 && llvm::isa<llvm::ConstantInt>(op) && line_num == 0) {
+            auto c = llvm::cast<llvm::ConstantInt>(op);
+            line_num = c->getLimitedValue();
         }
     }
     // try to guess the actual RTL name
@@ -225,7 +230,7 @@ Scope *process_var_decl(const llvm::CallInst &call_inst, Context &context, Scope
     if (var_name.find('[') != std::string::npos) {
         // this is an auto variable
         // very likely created from an array
-        value_name.append("_d0");
+        value_name.append("_q0");
     } else {
         // normal wire
         // need to follow the use
@@ -244,6 +249,7 @@ Scope *process_var_decl(const llvm::CallInst &call_inst, Context &context, Scope
     // actual debug scope
     auto debug_loc = call_inst.getDebugLoc();
     uint32_t line = debug_loc.getLine();
+    if (line == 0) line = line_num;
     auto *s = context.add_scope<DeclInstruction>(root_scope, var, line);
     return s;
 }
@@ -262,7 +268,6 @@ Scope *get_debug_scope(const llvm::Function *function, Context &context) {
             // https://releases.llvm.org/3.1/docs/SourceLevelDebugging.html
             auto debug_loc = instr.getDebugLoc();
             auto *node = debug_loc.getAsMDNode(*get_llvm_context());
-            if (!node) continue;
 
             Scope *res = nullptr;
             if (llvm::isa<llvm::CallInst>(instr)) {
@@ -291,7 +296,8 @@ Scope *get_debug_scope(const llvm::Function *function, Context &context) {
 
             res->instruction = &instr;
 
-            // get debug information
+            // for file name. some declare might not have
+            if (!node) continue;
             auto loc = llvm::DILocation(node);
             auto resolved_filename =
                 resolve_filename(loc.getFilename().str(), loc.getDirectory().str());
@@ -456,8 +462,8 @@ void Scope::add_scope(Scope *scope) {
 
 void Scope::remove_from_parent() {
     if (!parent_scope) return;
-    auto it = std::find(parent_scope->scopes.begin(), parent_scope->scopes.end(),
-                        [this](auto *p) { return p == this; });
+    auto it = std::find_if(parent_scope->scopes.begin(), parent_scope->scopes.end(),
+                           [this](auto *p) { return p == this; });
     if (it != parent_scope->scopes.end()) {
         parent_scope->scopes.erase(it);
     }
