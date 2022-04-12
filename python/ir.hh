@@ -130,6 +130,7 @@ public:
     void find_all(const std::function<bool(Scope *)> &predicate, std::vector<Scope *> &res);
     void bind_state(ModuleInfo &module);
     void add_scope(Scope *scope);
+    void remove_from_parent();
 
     [[nodiscard]] std::string get_filename() const;
     [[nodiscard]] std::string get_raw_filename() const;

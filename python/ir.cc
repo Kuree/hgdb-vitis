@@ -454,6 +454,16 @@ void Scope::add_scope(Scope *scope) {
     scope->parent_scope = this;
 }
 
+void Scope::remove_from_parent() {
+    if (!parent_scope) return;
+    auto it = std::find(parent_scope->scopes.begin(), parent_scope->scopes.end(),
+                        [this](auto *p) { return p == this; });
+    if (it != parent_scope->scopes.end()) {
+        parent_scope->scopes.erase(it);
+    }
+    parent_scope = nullptr;
+}
+
 // NOLINTNEXTLINE
 std::string Scope::get_filename() const {
     if (filename.empty()) {
@@ -552,7 +562,15 @@ std::map<uint32_t, StateInfo> merge_states(const std::map<uint32_t, StateInfo> &
     return state_infos;
 }
 
-void merge_scope(Scope *dst, Scope *target) {}
+void merge_scopes(const std::map<std::string, std::vector<Scope *>> &scopes) {
+    // we merge the scopes using the following rule
+    // child merged into parent
+    // during the merge, variable value will get fixed (name stays the same)
+    for (auto const &[func, ss] : scopes) {
+        (void)func;
+        (void)ss;
+    }
+}
 
 std::map<std::string, Scope *> reorganize_scopes(
     const llvm::Module *module,
@@ -599,29 +617,6 @@ std::map<std::string, Scope *> reorganize_scopes(
     }
 
     return scopes;
-}
-
-void reorganize_scopes(Context &context, Scope *scope) {
-    // destructive reconstruction
-    auto sub_scopes = scope->scopes;
-    scope->scopes.clear();
-
-    // group by function blocks
-    std::map<const llvm::Function *, Scope *> function_mapping;
-    for (auto *s : sub_scopes) {
-        if (auto *func = get_function(s->instruction)) {
-            if (function_mapping.find(func) == function_mapping.end()) {
-                // create a new scope for functions
-                auto *func_scope = context.add_scope<Scope>(scope);
-                function_mapping.emplace(func, func_scope);
-            }
-
-            function_mapping.at(func)->add_scope(s);
-        } else {
-            // just copied it over
-            scope->scopes.emplace_back(s);
-        }
-    }
 }
 
 std::map<std::string, std::shared_ptr<ModuleInfo>> ModuleInfo::module_infos = {};
