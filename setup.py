@@ -65,7 +65,7 @@ class CMakeBuild(build_ext):
                               cwd=self.build_temp, env=env)
 
         subprocess.check_call(
-            ['cmake', '--build', '.', "--target", "vitis"] + build_args,
+            ['cmake', '--build', '.', "--target", "vitis", "vitis0"] + build_args,
             cwd=self.build_temp)
 
 

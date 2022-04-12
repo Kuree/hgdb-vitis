@@ -4,6 +4,7 @@ import os
 import argparse
 import pathlib
 import vitis
+import vitis0
 import re
 import xml.etree.ElementTree as ElementTree
 
@@ -16,6 +17,7 @@ class DesignInfo:
         self.__parse_state_transition(self.top_name)
         self.__parse_signal_names(self.top_name)
         self.__merge_module_states(self.top_name)
+        self.__parse_debug_bc()
 
     def __parse_design_xml(self):
         xml_files = list(pathlib.Path(self.__solution).rglob("*.design.xml"))
@@ -34,6 +36,11 @@ class DesignInfo:
         # create top module
         vitis.set_module(top_module_name, self.top_module)
         self.__build_instance_hierarchy(top_module_name, top_module)
+
+    def __parse_debug_bc(self):
+        g_filename = os.path.join(self.__solution, ".autopilot", "db", self.top_name + ".bc")
+        assert os.path.exists(g_filename), "Debug bitcode not found at " + g_filename
+        self.scope_info = vitis0.get_function_scopes(g_filename)
 
     def __build_instance_hierarchy(self, parent_name, node):
         inst_list = node.find("InstancesList")

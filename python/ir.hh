@@ -34,9 +34,6 @@ std::string get_name(const llvm::Function *function);
 
 const llvm::Instruction *get_pre_alloc(const llvm::Instruction *instruction);
 
-const llvm::Instruction *find_matching_instr(const llvm::Function *function,
-                                             const llvm::Instruction *target);
-
 std::string guess_rtl_name(const llvm::Instruction *instruction);
 
 llvm::Module *parse_llvm_bitcode(const std::string &path);
@@ -147,9 +144,7 @@ private:
 
 class Instruction : public Scope {
 public:
-    Instruction(Scope *parent_scope, uint32_t line) : Scope(parent_scope) {
-        this->line = line;
-    }
+    Instruction(Scope *parent_scope, uint32_t line) : Scope(parent_scope) { this->line = line; }
 
     [[nodiscard]] std::string type() const override { return "none"; }
 
