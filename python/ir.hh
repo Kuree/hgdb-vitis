@@ -107,6 +107,8 @@ struct ModuleInfo {
     static std::vector<std::string> module_names();
 };
 
+class Context;
+
 class Scope {
 public:
     std::vector<Scope *> scopes;
@@ -118,9 +120,9 @@ public:
     std::vector<uint32_t> state_ids;
     const llvm::Instruction *instruction = nullptr;
 
-    const Scope *parent_scope;
+    Scope *parent_scope;
 
-    explicit Scope(const Scope *parent_scope) : parent_scope(parent_scope) {}
+    explicit Scope(Scope *parent_scope) : parent_scope(parent_scope) {}
 
     [[nodiscard]] virtual std::string type() const { return "block"; }
 
@@ -135,19 +137,25 @@ public:
     [[nodiscard]] std::string get_raw_filename() const;
     [[nodiscard]] std::string get_instr_string() const;
 
+    [[nodiscard]] virtual Scope *copy() const;
+
+    Context *context = nullptr;
+
 private:
     [[nodiscard]] virtual std::string serialize_member() const { return {}; }
 };
 
 class Instruction : public Scope {
 public:
-    Instruction(const Scope *parent_scope, uint32_t line) : Scope(parent_scope) {
+    Instruction(Scope *parent_scope, uint32_t line) : Scope(parent_scope) {
         this->line = line;
     }
 
     [[nodiscard]] std::string type() const override { return "none"; }
 
     [[nodiscard]] std::string serialize_member() const override;
+
+    [[nodiscard]] Scope *copy() const override;
 };
 
 class DeclInstruction : public Instruction {
@@ -155,12 +163,14 @@ public:
     // basically a line
     Variable var;
 
-    DeclInstruction(const Scope *parent_scope, Variable var, uint32_t line)
+    DeclInstruction(Scope *parent_scope, Variable var, uint32_t line)
         : Instruction(parent_scope, line), var(std::move(var)) {}
 
     [[nodiscard]] std::string type() const override { return "decl"; }
 
     [[nodiscard]] std::string serialize_member() const override;
+
+    [[nodiscard]] Scope *copy() const override;
 };
 
 class Context {
@@ -169,6 +179,7 @@ public:
     T *add_scope(Scope *parent_scope, Args... args) {
         auto entry = std::make_unique<T>(parent_scope, args...);
         if (parent_scope) parent_scope->scopes.emplace_back(entry.get());
+        entry->context = this;
         return reinterpret_cast<T *>(scopes_.emplace_back(std::move(entry)).get());
     }
 
@@ -185,6 +196,6 @@ std::map<uint32_t, StateInfo> merge_states(const std::map<uint32_t, StateInfo> &
 
 // rearrange scopes based on the function boundary
 std::map<std::string, Scope *> reorganize_scopes(const llvm::Module *module, Context &context,
-                                                 const std::map<std::string, Scope *> &scopes);
+                                                 std::map<std::string, Scope *> scopes);
 
 #endif  // HGDB_VITIS_IR_HH

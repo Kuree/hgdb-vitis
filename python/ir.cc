@@ -478,7 +478,19 @@ std::string Scope::get_raw_filename() const {
     return buffer;
 }
 
+Scope *Scope::copy() const {
+    auto *new_scope = context->add_scope<Scope>(parent_scope);
+    *new_scope = *this;
+    return new_scope;
+}
+
 std::string Instruction::serialize_member() const { return R"("line":)" + std::to_string(line); }
+
+Scope *Instruction::copy() const {
+    auto *new_scope = context->add_scope<Instruction>(parent_scope, line);
+    *new_scope = *this;
+    return new_scope;
+}
 
 std::string DeclInstruction::serialize_member() const {
     auto base = Instruction::serialize_member();
@@ -486,6 +498,12 @@ std::string DeclInstruction::serialize_member() const {
     base.append(R"("value":")").append(var.rtl).append(R"(",)");
     base.append(R"("rtl":true})");
     return base;
+}
+
+Scope *DeclInstruction::copy() const {
+    auto *new_scope = context->add_scope<DeclInstruction>(parent_scope, var, line);
+    *new_scope = *this;
+    return new_scope;
 }
 
 void StateInfo::add_instruction(const std::string &instr, const std::string &filename,
@@ -557,25 +575,43 @@ std::unordered_map<const llvm::Function *, const llvm::Function *> get_split_fun
     return res;
 }
 
-std::map<std::string, Scope *> reorganize_scopes(
-    const llvm::Module *module, Context &context, const std::map<std::string, Scope *> &scopes,
-    const std::map<std::string, const llvm::Function *> &module_functions) {
+void merge_scope(Scope *dst, Scope *target) {
+
+}
+
+std::map<std::string, Scope *> reorganize_scopes(const llvm::Module *module, Context &context,
+                                                 std::map<std::string, Scope *> scopes) {
     // we first need to establish the function hierarchy. i.e., which one is split from the
     // parent one
     auto function_mapping = get_split_function(module);
-    std::map<std::string, Scope *> res;
-    for (auto const &[module_name, module_function] : module_functions) {
+    std::unordered_map<const llvm::Function *, ModuleInfo *> function_to_module;
+    for (auto const &iter : ModuleInfo::module_infos) {
+        auto const &m = iter.second;
+        if (!m->function) {
+            throw std::runtime_error(m->module_name + " doesn't have function");
+        }
+        function_to_module.emplace(m->function, m.get());
+    }
+
+    for (auto const &[module_name, m] : ModuleInfo::module_infos) {
         if (scopes.find(module_name) == scopes.end()) {
             throw std::runtime_error("Unable to find module " + module_name);
         }
 
-        if (function_mapping.find(module_function) != function_mapping.end()) {
+        if (function_mapping.find(m->function) != function_mapping.end()) {
             // notice that we need to duplicate the scope when merging, just in case the same
             // definition is used elsewhere
+            auto *target_function = function_mapping.at(m->function);
+            // need to find the module that corresponds to that function
+            auto *target_module = function_to_module.at(target_function);
+            auto *root_scope = scopes.at(target_module->module_name);
+            // merge the current scope to the root scope
+            merge_scope(root_scope, scopes.at(module_name));
+            scopes.erase(module_name);
         }
     }
 
-    return res;
+    return scopes;
 }
 
 void reorganize_scopes(Context &context, Scope *scope) {
