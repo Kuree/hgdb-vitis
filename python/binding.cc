@@ -58,7 +58,17 @@ void bind_scope(py::module &m) {
         .def_readonly("width", &SignalInfo::width);
 
     m.def("merge_states", &merge_states);
-    m.def("reorganize_scopes", &reorganize_scopes);
+
+    py::class_<ModuleInfo, std::shared_ptr<ModuleInfo>>(m, "ModuleInfo")
+        .def(py::init<std::string>())
+        .def_readonly("module_name", &ModuleInfo::module_name)
+        .def_static("has_module", &ModuleInfo::has_module)
+        .def_static("set_module", &ModuleInfo::set_module)
+        .def_static("get_module", &ModuleInfo::get_module)
+        .def_readwrite("state_infos", &ModuleInfo::state_infos)
+        .def_readwrite("signals", &ModuleInfo::signals)
+        .def_readwrite("function", &ModuleInfo::function)
+        .def_static("module_names", &ModuleInfo::module_names);
 }
 
 PYBIND11_MODULE(vitis, m) {

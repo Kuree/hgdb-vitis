@@ -9,27 +9,14 @@ from typing import List, Dict
 import xml.etree.ElementTree as ElementTree
 
 
-class ModuleInfo:
-    modules: Dict[str, "ModuleInfo"] = {}
-
-    def __init__(self, module_name):
-        self.module_name = module_name
-
-        self.function = None
-
-        self.state_infos: Dict[int, vitis.StateInfo] = {}
-
-        self.signals: Dict[str, vitis.SignalInfo] = {}
-
-
 class InstanceInfo:
     def __init__(self, module_name, instance_name):
         self.module_name = module_name
         self.instance_name = instance_name
 
-        if module_name not in ModuleInfo.modules:
-            ModuleInfo.modules[module_name] = ModuleInfo(module_name)
-        self.module_info = ModuleInfo.modules[module_name]
+        if not vitis.ModuleInfo.has_module(module_name):
+            vitis.ModuleInfo.set_module(module_name, vitis.ModuleInfo(module_name))
+        self.module_info = vitis.ModuleInfo.get_module(module_name)
 
 
 class DesignInfo:
@@ -53,7 +40,7 @@ class DesignInfo:
         # recursively figure out the design hierarchy
         self.design_hierarchy: Dict[str, List[InstanceInfo]] = {}
         # create top module
-        ModuleInfo.modules[top_module_name] = ModuleInfo(top_module_name)
+        vitis.ModuleInfo.set_module(top_module_name, vitis.ModuleInfo(top_module_name))
         self.__build_instance_hierarchy(top_module_name, top_module)
         self.__parse_llvm_bc()
         self.__parse_state_transition(self.top_name)
@@ -89,9 +76,9 @@ class DesignInfo:
             func = self.__o3_bc.get_function(name)
             assert func is not None, "Cannot find function " + name
             module_name = func.demangled_name
-            assert module_name in ModuleInfo.modules
-            ModuleInfo.modules[module_name].function = func
-        ModuleInfo.modules[self.top_name].function = top_function
+            assert vitis.ModuleInfo.has_module(module_name)
+            vitis.ModuleInfo.get_module(module_name).function = func
+        vitis.ModuleInfo.get_module(self.top_name).function = top_function
 
     def __get_report_lines(self, module_name):
         rpt_path = os.path.join(self.__solution, ".autopilot", "db", module_name + ".verbose.rpt")
@@ -108,7 +95,7 @@ class DesignInfo:
             # recursively parse it
             self.__parse_signal_names(m_name)
 
-        module_signals = ModuleInfo.modules[module_name].signals
+        module_signals = vitis.ModuleInfo.get_module(module_name).signals
         rpt_lines = self.__get_report_lines(module_name)
         register_mode = 0
         for line in rpt_lines:
@@ -139,7 +126,7 @@ class DesignInfo:
             # recursively parse it
             self.__parse_state_transition(m_name)
 
-        module_state_info = ModuleInfo.modules[module_name].state_infos
+        module_state_info = vitis.ModuleInfo.get_module(module_name).state_infos
         rpt_lines = self.__get_report_lines(module_name)
         for i, line in enumerate(rpt_lines):
             if line.strip() == "* FSM state operations:":
@@ -182,15 +169,15 @@ class DesignInfo:
             m_name = inst.module_name
             self.__merge_module_states(m_name)
 
-        signals = ModuleInfo.modules[module_name].signals
-        info = ModuleInfo.modules[module_name].state_infos
-        ModuleInfo.modules[module_name].state_infos = vitis.merge_states(info, signals, module_name)
+        signals = vitis.ModuleInfo.get_module(module_name).signals
+        info = vitis.ModuleInfo.get_module(module_name).state_infos
+        vitis.ModuleInfo.get_module(module_name).state_infos = vitis.merge_states(info, signals, module_name)
 
     @staticmethod
     def __get_state_related_instr(module_name, function, state_id):
         # based on locations annotated in the state report. Notice that the location information is also messed up
         # due to function inlining
-        module = ModuleInfo.modules[module_name]
+        module = vitis.ModuleInfo.get_module(module_name)
         instructions = module.state_infos[state_id].instructions
         loc_map = function.get_instr_loc()
         res = []
@@ -219,10 +206,18 @@ class DesignInfo:
             options.add_mapping(b, a)
 
         tables = {}
-        for module_name, module in ModuleInfo.modules.items():
+        module_scopes = {}
+        module_names = vitis.ModuleInfo.module_names()
+        for module_name in module_names:
+            module = vitis.ModuleInfo.get_module(module_name)
             function = module.function
             scope = function.get_debug_scope(context)
             scope.bind_state(module.state_infos)
+            module_scopes[module_name] = scope
+
+        # module_scopes = vitis.reorganize_scopes(context, module_scopes)
+
+        for module_name, scope in module_scopes.items():
             tables[module_name] = scope.serialize(options)
 
         res = "{\"generator\":\"vitis\",\"table\":["

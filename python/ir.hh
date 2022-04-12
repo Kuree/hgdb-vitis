@@ -76,6 +76,33 @@ struct SerializationOptions {
     void add_mapping(const std::string &before, std::string &after);
 };
 
+struct ModuleInfo {
+    static std::map<std::string, std::shared_ptr<ModuleInfo>> module_infos;
+
+    std::string module_name;
+
+    llvm::Function *function = nullptr;
+
+    std::map<uint32_t, StateInfo> state_infos;
+    std::map<std::string, SignalInfo> signals;
+
+    explicit ModuleInfo(std::string module_name) : module_name(std::move(module_name)) {}
+
+    static inline std::shared_ptr<ModuleInfo> get_module(const std::string &name) {
+        return module_infos.at(name);
+    }
+
+    static inline void set_module(const std::string &name, const std::shared_ptr<ModuleInfo> &mod) {
+        module_infos.emplace(name, mod);
+    }
+
+    static inline bool has_module(const std::string &name) {
+        return module_infos.find(name) != module_infos.end();
+    }
+
+    static std::vector<std::string> module_names();
+};
+
 class Scope {
 public:
     std::vector<Scope *> scopes;
@@ -153,6 +180,7 @@ std::map<uint32_t, StateInfo> merge_states(const std::map<uint32_t, StateInfo> &
                                            const std::string &module_name);
 
 // rearrange scopes based on the function boundary
-void reorganize_scopes(Context &context, Scope *scope);
+std::map<std::string, Scope *> reorganize_scopes(const llvm::Module *module, Context &context,
+                                                 const std::map<std::string, Scope *> &scopes);
 
 #endif  // HGDB_VITIS_IR_HH

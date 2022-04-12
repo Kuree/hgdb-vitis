@@ -532,6 +532,52 @@ std::map<uint32_t, StateInfo> merge_states(const std::map<uint32_t, StateInfo> &
     return state_infos;
 }
 
+std::unordered_map<const llvm::Function *, const llvm::Function *> get_split_function(
+    const llvm::Module *module) {
+    std::unordered_map<const llvm::Function *, const llvm::Function *> res;
+    auto const &functions = module->getFunctionList();
+    std::unordered_map<std::string, const llvm::Function *> name_to_functions;
+    for (auto const &func : functions) {
+        auto name = func.getName().str();
+        name_to_functions.emplace(name + ".exit", &func);
+    }
+
+    for (auto const &to : functions) {
+        for (auto const &blk : to) {
+            auto const &blk_name = blk.getName().str();
+            for (auto const &[target_name, parent_func] : name_to_functions) {
+                if (blk_name.rfind(target_name, 0) == 0) {
+                    // found it
+                    res.emplace(&to, parent_func);
+                    break;
+                }
+            }
+        }
+    }
+    return res;
+}
+
+std::map<std::string, Scope *> reorganize_scopes(
+    const llvm::Module *module, Context &context, const std::map<std::string, Scope *> &scopes,
+    const std::map<std::string, const llvm::Function *> &module_functions) {
+    // we first need to establish the function hierarchy. i.e., which one is split from the
+    // parent one
+    auto function_mapping = get_split_function(module);
+    std::map<std::string, Scope *> res;
+    for (auto const &[module_name, module_function] : module_functions) {
+        if (scopes.find(module_name) == scopes.end()) {
+            throw std::runtime_error("Unable to find module " + module_name);
+        }
+
+        if (function_mapping.find(module_function) != function_mapping.end()) {
+            // notice that we need to duplicate the scope when merging, just in case the same
+            // definition is used elsewhere
+        }
+    }
+
+    return res;
+}
+
 void reorganize_scopes(Context &context, Scope *scope) {
     // destructive reconstruction
     auto sub_scopes = scope->scopes;
@@ -553,4 +599,15 @@ void reorganize_scopes(Context &context, Scope *scope) {
             scope->scopes.emplace_back(s);
         }
     }
+}
+
+std::map<std::string, std::shared_ptr<ModuleInfo>> ModuleInfo::module_infos = {};
+
+std::vector<std::string> ModuleInfo::module_names() {
+    std::vector<std::string> res;
+    res.reserve(module_infos.size());
+    for (auto const &[name, _] : module_infos) {
+        res.emplace_back(name);
+    }
+    return res;
 }
