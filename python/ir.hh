@@ -118,6 +118,7 @@ public:
     const llvm::Instruction *instruction = nullptr;
 
     Scope *parent_scope;
+    ModuleInfo *module = nullptr;
 
     explicit Scope(Scope *parent_scope) : parent_scope(parent_scope) {}
 
@@ -127,7 +128,7 @@ public:
 
     Scope *find(const std::function<bool(Scope *)> &predicate);
     void find_all(const std::function<bool(Scope *)> &predicate, std::vector<Scope *> &res);
-    void bind_state(const std::map<uint32_t, StateInfo> &state_infos);
+    void bind_state(ModuleInfo &module);
     void add_scope(Scope *scope);
 
     [[nodiscard]] std::string get_filename() const;
@@ -189,8 +190,10 @@ std::map<uint32_t, StateInfo> merge_states(const std::map<uint32_t, StateInfo> &
                                            const std::map<std::string, SignalInfo> &signals,
                                            const std::string &module_name);
 
-// rearrange scopes based on the function boundary
-std::map<std::string, Scope *> reorganize_scopes(const llvm::Module *module, Context &context,
-                                                 std::map<std::string, Scope *> scopes);
+std::map<std::string, Scope *> reorganize_scopes(
+    const llvm::Module *module,
+    const std::map<std::string, std::map<std::string, std::pair<uint32_t, uint32_t>>>
+        &original_functions,
+    std::map<std::string, Scope *> scopes);
 
 #endif  // HGDB_VITIS_IR_HH

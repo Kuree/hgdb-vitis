@@ -402,7 +402,9 @@ void Scope::find_all(const std::function<bool(Scope *)> &predicate, std::vector<
     }
 }
 
-void Scope::bind_state(const std::map<uint32_t, StateInfo> &state_infos) {
+void Scope::bind_state(ModuleInfo &mod) {
+    module = &mod;
+    const std::map<uint32_t, StateInfo> &state_infos = mod.state_infos;
     // we bind state to scope
     // if the state info has line number, we use that for matching
     // if not, we brute-force to match the instruction string
@@ -550,63 +552,49 @@ std::map<uint32_t, StateInfo> merge_states(const std::map<uint32_t, StateInfo> &
     return state_infos;
 }
 
-std::unordered_map<const llvm::Function *, const llvm::Function *> get_split_function(
-    const llvm::Module *module) {
-    std::unordered_map<const llvm::Function *, const llvm::Function *> res;
-    auto const &functions = module->getFunctionList();
-    std::unordered_map<std::string, const llvm::Function *> name_to_functions;
-    for (auto const &func : functions) {
-        auto name = func.getName().str();
-        name_to_functions.emplace(name + ".exit", &func);
-    }
-
-    for (auto const &to : functions) {
-        for (auto const &blk : to) {
-            auto const &blk_name = blk.getName().str();
-            for (auto const &[target_name, parent_func] : name_to_functions) {
-                if (blk_name.rfind(target_name, 0) == 0) {
-                    // found it
-                    res.emplace(&to, parent_func);
-                    break;
-                }
-            }
-        }
-    }
-    return res;
-}
-
 void merge_scope(Scope *dst, Scope *target) {}
 
-std::map<std::string, Scope *> reorganize_scopes(const llvm::Module *module,
-                                                 const std::set<std::string> &original_functions,
-                                                 std::map<std::string, Scope *> scopes) {
-    // we first need to establish the function hierarchy. i.e., which one is split from the
-    // parent one
-    auto function_mapping = get_split_function(module);
-    std::unordered_map<const llvm::Function *, ModuleInfo *> function_to_module;
-    for (auto const &iter : ModuleInfo::module_infos) {
-        auto const &m = iter.second;
-        if (!m->function) {
-            throw std::runtime_error(m->module_name + " doesn't have function");
-        }
-        function_to_module.emplace(m->function, m.get());
-    }
+std::map<std::string, Scope *> reorganize_scopes(
+    const llvm::Module *module,
+    const std::map<std::string, std::map<std::string, std::pair<uint32_t, uint32_t>>>
+        &original_functions,
+    std::map<std::string, Scope *> scopes) {
+    // we first sort through the scopes. i.e. put them into different buckets
+    std::map<std::string, std::vector<Scope *>> function_scopes;
 
-    for (auto const &[module_name, m] : ModuleInfo::module_infos) {
-        if (scopes.find(module_name) == scopes.end()) {
-            throw std::runtime_error("Unable to find module " + module_name);
-        }
+    for (auto const &[mod_name, scope] : scopes) {
+        auto child_scopes = scope->scopes;
+        scope->scopes.clear();
 
-        if (function_mapping.find(m->function) != function_mapping.end()) {
-            // notice that we need to duplicate the scope when merging, just in case the same
-            // definition is used elsewhere
-            auto *target_function = function_mapping.at(m->function);
-            // need to find the module that corresponds to that function
-            auto *target_module = function_to_module.at(target_function);
-            auto *root_scope = scopes.at(target_module->module_name);
-            // merge the current scope to the root scope
-            merge_scope(root_scope, scopes.at(module_name));
-            scopes.erase(module_name);
+        std::map<std::string, Scope *> mod_functions;
+
+        for (auto *child_scope : child_scopes) {
+            auto filename = child_scope->get_filename();
+            if (original_functions.find(filename) == original_functions.end()) {
+                throw std::runtime_error("Unable to determine location for file " + filename);
+            }
+            auto const &function_range = original_functions.at(filename);
+            auto line = child_scope->line;
+            bool found = false;
+            for (auto const &[func_name, line_range] : function_range) {
+                auto const [min, max] = line_range;
+                if (line >= min && line <= max) {
+                    found = true;
+
+                    if (mod_functions.find(func_name) == mod_functions.end()) {
+                        auto *new_scope = scope->context->add_scope<Scope>(scope);
+                        mod_functions.emplace(func_name, new_scope);
+                        function_scopes[func_name].emplace_back(new_scope);
+                    }
+
+                    auto *function_scope = mod_functions.at(func_name);
+                    function_scope->add_scope(child_scope);
+                }
+            }
+
+            if (!found) {
+                throw std::runtime_error("Unable to determine scope location");
+            }
         }
     }
 

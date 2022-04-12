@@ -73,6 +73,8 @@ void bind_scope(py::module &m) {
         .def("set_module", &ModuleInfo::set_module)
         .def("get_module", &ModuleInfo::get_module)
         .def("module_names", &ModuleInfo::module_names);
+
+    m.def("reorganize_scopes", reorganize_scopes);
 }
 
 PYBIND11_MODULE(vitis, m) {

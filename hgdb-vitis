@@ -208,10 +208,10 @@ class DesignInfo:
             module = vitis.get_module(module_name)
             function = module.function
             scope = function.get_debug_scope(context)
-            scope.bind_state(module.state_infos)
+            scope.bind_state(module)
             module_scopes[module_name] = scope
 
-        # module_scopes = vitis.reorganize_scopes(context, module_scopes)
+        module_scopes = vitis.reorganize_scopes(self.__o3_bc, self.scope_info, module_scopes)
 
         for module_name, scope in module_scopes.items():
             tables[module_name] = scope.serialize(options)
@@ -227,9 +227,9 @@ class DesignInfo:
             for inst_name, inst in instances.items():
                 res += "{\"name\":\"" + inst_name + "\","
                 res += "\"module\":\"" + inst.module_name + "\"}"
-                if i != (len(instances)) - 1:
+                if i != ((len(instances)) - 1):
                     res += ","
-                i += 0
+                i += 1
             # no variables for now since most of them are C functions
             res += "],\"variables\":[]}"
             if count != len(tables):
