@@ -62,15 +62,17 @@ void bind_scope(py::module &m) {
     py::class_<ModuleInfo, std::shared_ptr<ModuleInfo>>(m, "ModuleInfo")
         .def(py::init<std::string>())
         .def_readonly("module_name", &ModuleInfo::module_name)
-        .def_static("has_module", &ModuleInfo::has_module)
-        .def_static("set_module", &ModuleInfo::set_module)
-        .def_static("get_module", &ModuleInfo::get_module)
         .def_readwrite("state_infos", &ModuleInfo::state_infos)
         .def_readwrite("signals", &ModuleInfo::signals)
         .def_readwrite("function", &ModuleInfo::function)
         .def_readwrite("instances", &ModuleInfo::instances)
-        .def_static("module_names", &ModuleInfo::module_names)
         .def("add_instance", &ModuleInfo::add_instance);
+
+    // static methods
+    m.def("has_module", &ModuleInfo::has_module)
+        .def("set_module", &ModuleInfo::set_module)
+        .def("get_module", &ModuleInfo::get_module)
+        .def("module_names", &ModuleInfo::module_names);
 }
 
 PYBIND11_MODULE(vitis, m) {

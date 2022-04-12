@@ -33,7 +33,7 @@ class DesignInfo:
         assert top_module_name == self.top_name, "Design database files corrupted"
         self.top_module = vitis.ModuleInfo(top_module_name)
         # create top module
-        vitis.ModuleInfo.set_module(top_module_name, self.top_module)
+        vitis.set_module(top_module_name, self.top_module)
         self.__build_instance_hierarchy(top_module_name, top_module)
 
     def __build_instance_hierarchy(self, parent_name, node):
@@ -43,7 +43,7 @@ class DesignInfo:
         for child in inst_list.findall("Instance"):
             inst_name = child.find("InstName").text
             module_name = child.find("ModuleName").text
-            mod = vitis.ModuleInfo.get_module(parent_name)
+            mod = vitis.get_module(parent_name)
             mod.add_instance(module_name, inst_name)
             # recursive call
             self.__build_instance_hierarchy(module_name, child)
@@ -65,9 +65,9 @@ class DesignInfo:
             func = self.__o3_bc.get_function(name)
             assert func is not None, "Cannot find function " + name
             module_name = func.demangled_name
-            assert vitis.ModuleInfo.has_module(module_name)
-            vitis.ModuleInfo.get_module(module_name).function = func
-        vitis.ModuleInfo.get_module(self.top_name).function = top_function
+            assert vitis.has_module(module_name)
+            vitis.get_module(module_name).function = func
+        vitis.get_module(self.top_name).function = top_function
 
     def __get_report_lines(self, module_name):
         rpt_path = os.path.join(self.__solution, ".autopilot", "db", module_name + ".verbose.rpt")
@@ -78,7 +78,7 @@ class DesignInfo:
 
     def __parse_signal_names(self, module_name):
         # this is similar to the state transition since they're in the same file
-        instances = vitis.ModuleInfo.get_module(module_name).instances
+        instances = vitis.get_module(module_name).instances
         for m in instances.values():
             # recursively parse it
             self.__parse_signal_names(m.module_name)
@@ -104,13 +104,13 @@ class DesignInfo:
                 signal = vitis.SignalInfo(name, width)
                 module_signals[name] = signal
 
-        vitis.ModuleInfo.get_module(module_name).signals = module_signals
+        vitis.get_module(module_name).signals = module_signals
 
     def __parse_state_transition(self, module_name):
         # we need to parse state transition for every module since they are independent
 
         # recursively parse the state transition
-        instances = vitis.ModuleInfo.get_module(module_name).instances
+        instances = vitis.get_module(module_name).instances
         for m in instances.values():
             # recursively parse it
             self.__parse_state_transition(m.module_name)
@@ -152,22 +152,22 @@ class DesignInfo:
                     else:
                         current_state.add_instr(instr)
 
-        vitis.ModuleInfo.get_module(module_name).state_infos = module_state_info
+        vitis.get_module(module_name).state_infos = module_state_info
 
     def __merge_module_states(self, module_name):
-        instances = vitis.ModuleInfo.get_module(module_name).instances
+        instances = vitis.get_module(module_name).instances
         for m in instances.values():
             self.__merge_module_states(m.module_name)
 
-        signals = vitis.ModuleInfo.get_module(module_name).signals
-        info = vitis.ModuleInfo.get_module(module_name).state_infos
-        vitis.ModuleInfo.get_module(module_name).state_infos = vitis.merge_states(info, signals, module_name)
+        signals = vitis.get_module(module_name).signals
+        info = vitis.get_module(module_name).state_infos
+        vitis.get_module(module_name).state_infos = vitis.merge_states(info, signals, module_name)
 
     @staticmethod
     def __get_state_related_instr(module_name, function, state_id):
         # based on locations annotated in the state report. Notice that the location information is also messed up
         # due to function inlining
-        module = vitis.ModuleInfo.get_module(module_name)
+        module = vitis.get_module(module_name)
         instructions = module.state_infos[state_id].instructions
         loc_map = function.get_instr_loc()
         res = []
@@ -197,9 +197,9 @@ class DesignInfo:
 
         tables = {}
         module_scopes = {}
-        module_names = vitis.ModuleInfo.module_names()
+        module_names = vitis.module_names()
         for module_name in module_names:
-            module = vitis.ModuleInfo.get_module(module_name)
+            module = vitis.get_module(module_name)
             function = module.function
             scope = function.get_debug_scope(context)
             scope.bind_state(module.state_infos)
@@ -216,7 +216,7 @@ class DesignInfo:
             res += "{"
             res += "\"type\":\"module\",\"name\":\"" + module_name + "\",\"scope\":[" + s + "],\"instances\":["
             # generate instances
-            instances = vitis.ModuleInfo.get_module(module_name).instances
+            instances = vitis.get_module(module_name).instances
             i = 0
             for inst_name, inst in instances.items():
                 res += "{\"name\":\"" + inst_name + "\","
