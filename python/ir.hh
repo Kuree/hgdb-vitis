@@ -86,7 +86,11 @@ struct ModuleInfo {
     std::map<uint32_t, StateInfo> state_infos;
     std::map<std::string, SignalInfo> signals;
 
+    std::map<std::string, std::shared_ptr<ModuleInfo>> instances;
+
     explicit ModuleInfo(std::string module_name) : module_name(std::move(module_name)) {}
+
+    void add_instance(const std::string &m_name, const std::string &instance_name);
 
     static inline std::shared_ptr<ModuleInfo> get_module(const std::string &name) {
         return module_infos.at(name);

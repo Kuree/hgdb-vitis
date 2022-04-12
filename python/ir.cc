@@ -603,6 +603,15 @@ void reorganize_scopes(Context &context, Scope *scope) {
 
 std::map<std::string, std::shared_ptr<ModuleInfo>> ModuleInfo::module_infos = {};
 
+void ModuleInfo::add_instance(const std::string &m_name, const std::string &instance_name) {
+    if (module_infos.find(m_name) == module_infos.end()) {
+        auto ptr = std::make_shared<ModuleInfo>(m_name);
+        module_infos.emplace(m_name, ptr);
+    }
+    auto module = module_infos.at(m_name);
+    instances.emplace(instance_name, module);
+}
+
 std::vector<std::string> ModuleInfo::module_names() {
     std::vector<std::string> res;
     res.reserve(module_infos.size());
