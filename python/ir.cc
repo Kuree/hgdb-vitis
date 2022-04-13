@@ -477,6 +477,21 @@ void Scope::remove_from_parent() {
     parent_scope = nullptr;
 }
 
+// NOLINTNEXTLINE
+void Scope::clear_empty() {
+    for (auto *s : scopes) {
+        s->clear_empty();
+    }
+
+    auto ss = scopes;
+    for (auto *s : ss) {
+        if (s->scopes.empty() && s->type() == "block") {
+            auto it = std::find(scopes.begin(), scopes.end(), s);
+            scopes.erase(it);
+        }
+    }
+}
+
 bool Scope::contains(const Scope *scope) const {
     if (!module) return false;
     auto const *mod = scope->module;
@@ -788,6 +803,7 @@ std::map<std::string, Scope *> reorganize_scopes(
     {
         std::unordered_set<std::string> remove;
         for (auto const &[n, s] : scopes) {
+            s->clear_empty();
             if (s->scopes.empty()) {
                 remove.emplace(n);
             }

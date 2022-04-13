@@ -135,6 +135,7 @@ public:
     void bind_state(ModuleInfo &module);
     void add_scope(Scope *scope);
     void remove_from_parent();
+    void clear_empty();
     [[nodiscard]] bool contains(const Scope *scope) const;
 
     [[nodiscard]] std::string get_filename() const;
