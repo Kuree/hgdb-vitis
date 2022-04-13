@@ -73,6 +73,8 @@ struct SerializationOptions {
     void add_mapping(const std::string &before, std::string &after);
 };
 
+class Scope;
+
 struct ModuleInfo {
     static std::map<std::string, std::shared_ptr<ModuleInfo>> module_infos;
 
@@ -84,6 +86,8 @@ struct ModuleInfo {
     std::map<std::string, SignalInfo> signals;
 
     std::map<std::string, std::shared_ptr<ModuleInfo>> instances;
+
+    Scope *root_scope = nullptr;
 
     explicit ModuleInfo(std::string module_name) : module_name(std::move(module_name)) {}
 
@@ -131,6 +135,7 @@ public:
     void bind_state(ModuleInfo &module);
     void add_scope(Scope *scope);
     void remove_from_parent();
+    [[nodiscard]] bool contains(const Scope *scope) const;
 
     [[nodiscard]] std::string get_filename() const;
     [[nodiscard]] std::string get_raw_filename() const;
@@ -142,6 +147,8 @@ public:
 
 private:
     [[nodiscard]] virtual std::string serialize_member() const { return {}; }
+
+    void set_module(ModuleInfo *mod);
 };
 
 class Instruction : public Scope {

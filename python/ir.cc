@@ -4,6 +4,8 @@
 
 #include <filesystem>
 #include <iostream>
+#include <queue>
+#include <stack>
 #include <unordered_set>
 
 #include "llvm/ADT/StringMap.h"
@@ -233,6 +235,8 @@ Scope *process_var_decl(const llvm::CallInst &call_inst, Context &context, Scope
     } else {
         // normal wire
         // need to follow the use
+        // also need to read out the type in case it's an array, which has different
+        // TODO: check variable type and produce vector if necessary
         for (auto use = value->use_begin(); use != value->use_end(); use++) {
             if (llvm::isa<llvm::LoadInst>(*use)) {
                 auto load = llvm::cast<llvm::LoadInst>(*use);
@@ -410,7 +414,8 @@ void Scope::find_all(const std::function<bool(Scope *)> &predicate, std::vector<
 }
 
 void Scope::bind_state(ModuleInfo &mod) {
-    module = &mod;
+    mod.root_scope = this;
+    set_module(&mod);
     const std::map<uint32_t, StateInfo> &state_infos = mod.state_infos;
     // we bind state to scope
     // if the state info has line number, we use that for matching
@@ -459,6 +464,7 @@ void Scope::bind_state(ModuleInfo &mod) {
 void Scope::add_scope(Scope *scope) {
     scopes.emplace_back(scope);
     scope->parent_scope = this;
+    scope->module = module;
 }
 
 void Scope::remove_from_parent() {
@@ -469,6 +475,29 @@ void Scope::remove_from_parent() {
         parent_scope->scopes.erase(it);
     }
     parent_scope = nullptr;
+}
+
+bool Scope::contains(const Scope *scope) const {
+    if (!module) return false;
+    auto const *mod = scope->module;
+    // breath-first search
+    std::queue<const ModuleInfo *> modules;
+    std::unordered_set<const ModuleInfo *> visited;
+    modules.emplace(module);
+
+    while (!modules.empty()) {
+        auto const *m = modules.front();
+        modules.pop();
+        if (visited.find(m) != visited.end()) {
+            continue;
+        }
+        if (m == mod) return true;
+        visited.emplace(m);
+        for (auto const &[name, inst] : m->instances) {
+            modules.emplace(inst.get());
+        }
+    }
+    return false;
 }
 
 // NOLINTNEXTLINE
@@ -501,6 +530,14 @@ Scope *Scope::copy() const {
     auto *new_scope = context->add_scope<Scope>(parent_scope);
     *new_scope = *this;
     return new_scope;
+}
+
+// NOLINTNEXTLINE
+void Scope::set_module(ModuleInfo *mod) {
+    module = mod;
+    for (auto *s : scopes) {
+        s->set_module(mod);
+    }
 }
 
 std::string Instruction::serialize_member() const { return R"("line":)" + std::to_string(line); }
@@ -569,13 +606,107 @@ std::map<uint32_t, StateInfo> merge_states(const std::map<uint32_t, StateInfo> &
     return state_infos;
 }
 
+void merge_scope(Scope *parent, Scope *child) {
+    // compute the instance prefix
+    auto *new_child = child->copy();
+    auto *child_module = child->module;
+    auto *parent_module = parent->module;
+    if (!child_module || !parent_module)
+        throw std::runtime_error("Top-level scope cannot have null module");
+
+    // compute instance prefix
+    // BFS with prefix in a map. probably the same memory size if implemented as a recursion
+    std::queue<ModuleInfo *> mods;
+    mods.push(parent_module);
+    std::unordered_map<ModuleInfo *, std::pair<std::string, ModuleInfo *>> hierarchy;
+
+    while (!mods.empty()) {
+        auto *module = mods.front();
+        mods.pop();
+        for (auto [name, m] : module->instances) {
+            hierarchy[m.get()] = std::make_pair(name, module);
+            if (m.get() == child_module) {
+                break;
+            }
+            mods.emplace(m.get());
+        }
+    }
+
+    std::stack<std::string> prefixes;
+    {
+        auto *module = child_module;
+        while (hierarchy.find(module) != hierarchy.end()) {
+            auto [n, p] = hierarchy.at(module);
+            prefixes.emplace(n);
+            module = p;
+        }
+    }
+    std::string prefix;
+    while (!prefixes.empty()) {
+        auto const &n = prefixes.top();
+        prefix.append(n).append(".");
+        prefixes.pop();
+    }
+    // fix all the variable declaration
+
+    {
+        std::queue<Scope *> scopes;
+        scopes.push(new_child);
+
+        while (!scopes.empty()) {
+            auto *s = scopes.front();
+            scopes.pop();
+            if (s->type() == "decl") {
+                // rename it
+                auto *var_scope = reinterpret_cast<DeclInstruction *>(s);
+                var_scope->var.rtl = prefix + var_scope->var.rtl;
+            }
+            for (auto *scope : s->scopes) {
+                scopes.push(scope);
+            }
+        }
+    }
+
+    // merge the child into parent
+    for (auto *s : new_child->scopes) {
+        parent->add_scope(s);
+    }
+    new_child->scopes.clear();
+    child->scopes.clear();
+}
+
 void merge_scopes(const std::map<std::string, std::vector<Scope *>> &scopes) {
     // we merge the scopes using the following rule
     // child merged into parent
     // during the merge, variable value will get fixed (name stays the same)
     for (auto const &[func, ss] : scopes) {
-        (void)func;
-        (void)ss;
+        if (ss.empty()) continue;
+        // first pass to determine the root. notice that root can possibly not exist
+        // i.e. two nodes sharing the same scope
+        Scope *parent = ss[0];
+        bool contained = false;
+        for (auto i = 1u; i < ss.size(); i++) {
+            bool parent_ss = parent->contains(ss[i]);
+            if (!parent_ss && ss[i]->contains(parent)) {
+                parent = ss[i];
+                contained = true;
+            } else if (parent_ss) {
+                contained = true;
+            }
+        }
+
+        if (contained) {
+            // now merge everything into parent
+            for (auto *s : ss) {
+                if (s != parent) {
+                    merge_scope(parent, s);
+                }
+            }
+        } else {
+            // we need to find a parent and put all of them in the scope
+            return;
+        }
+
     }
 }
 
@@ -608,6 +739,7 @@ std::map<std::string, Scope *> reorganize_scopes(
 
                     if (mod_functions.find(func_name) == mod_functions.end()) {
                         auto *new_scope = scope->context->add_scope<Scope>(scope);
+                        new_scope->module = scope->module;
                         mod_functions.emplace(func_name, new_scope);
                         function_scopes[func_name].emplace_back(new_scope);
                     }
@@ -620,6 +752,22 @@ std::map<std::string, Scope *> reorganize_scopes(
             if (!found) {
                 throw std::runtime_error("Unable to determine scope location");
             }
+        }
+    }
+
+    merge_scopes(function_scopes);
+
+    // clean up the empty scope
+    {
+        std::unordered_set<std::string> remove;
+        for (auto const &[n, s] : scopes) {
+            if (s->scopes.empty()) {
+                remove.emplace(n);
+            }
+        }
+
+        for (auto const &n : remove) {
+            scopes.erase(n);
         }
     }
 
