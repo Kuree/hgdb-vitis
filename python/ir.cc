@@ -8,14 +8,13 @@
 
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Analysis/DebugInfo.h"
+#include "llvm/Constants.h"
 #include "llvm/Instructions.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Support/DebugLoc.h"
 #include "llvm/Support/IRReader.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Constants.h"
-
 
 llvm::LLVMContext *get_llvm_context() {
     static std::unique_ptr<llvm::LLVMContext> context;
@@ -378,13 +377,15 @@ std::string Scope::serialize(const SerializationOptions &options) const {
     }
     if (!state_ids.empty()) {
         ss << R"(,"condition":")";
+        // we hardcode the idle here
+        ss << "(!ap_idle)&&(";
         for (auto i = 0u; i < state_ids.size(); i++) {
             ss << "(ap_CS_fsm[" << (state_ids[i] - 1) << "])";
             if (i != (state_ids.size() - 1)) {
                 ss << "||";
             }
         }
-        ss << '"';
+        ss << ')' << '"';
     }
     ss << "}";
     return ss.str();
