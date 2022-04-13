@@ -691,8 +691,7 @@ Scope *find_parent(const std::vector<Scope *> &scopes) {
             }
         }
     }
-    if (!parent_module)
-        throw std::runtime_error("Unable to find module for scope");
+    if (!parent_module) throw std::runtime_error("Unable to find module for scope");
     auto *res = parent_module->root_scope;
     // make sure it contains
     for (auto *s : scopes) {
@@ -724,9 +723,12 @@ void merge_scopes(const std::map<std::string, std::vector<Scope *>> &scopes) {
 
         if (contained) {
             // now merge everything into parent
+            // create a new scope for this function
+            auto *target_parent = parent->context->add_scope<Scope>(parent);
+            target_parent->module = parent->module;
             for (auto *s : ss) {
                 if (s != parent) {
-                    merge_scope(parent, s);
+                    merge_scope(target_parent, s);
                 }
             }
         } else {
@@ -734,12 +736,12 @@ void merge_scopes(const std::map<std::string, std::vector<Scope *>> &scopes) {
             parent = find_parent(ss);
             // because the parent doesn't have corresponding function
             // we need to create a new scope
-            auto *target = parent->context->add_scope<Scope>(nullptr);
+
+            auto *target = parent->context->add_scope<Scope>(parent);
             target->module = parent->module;
             for (auto *s : ss) {
-                target->add_scope(s);
+                merge_scope(target, s);
             }
-            merge_scope(parent, target);
         }
     }
 }
