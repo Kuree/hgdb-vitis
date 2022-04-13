@@ -675,12 +675,39 @@ void merge_scope(Scope *parent, Scope *child) {
     child->scopes.clear();
 }
 
+Scope *find_parent(const std::vector<Scope *> &scopes) {
+    if (scopes.empty()) return nullptr;
+    auto *scope = scopes[0];
+    auto *mod = scope->module;
+    ModuleInfo *parent_module = nullptr;
+    for (auto const &[name, module] : ModuleInfo::module_infos) {
+        // just need to find one
+        // assuming there is no duplicated basic block split out
+        if (parent_module) break;
+        for (auto const &[inst_name, inst] : module->instances) {
+            if (inst.get() == mod) {
+                parent_module = module.get();
+                break;
+            }
+        }
+    }
+    if (!parent_module)
+        throw std::runtime_error("Unable to find module for scope");
+    auto *res = parent_module->root_scope;
+    // make sure it contains
+    for (auto *s : scopes) {
+        if (!res->contains(s)) throw std::runtime_error("Scopes are not in the same function");
+    }
+
+    return res;
+}
+
 void merge_scopes(const std::map<std::string, std::vector<Scope *>> &scopes) {
     // we merge the scopes using the following rule
     // child merged into parent
     // during the merge, variable value will get fixed (name stays the same)
     for (auto const &[func, ss] : scopes) {
-        if (ss.empty()) continue;
+        if (ss.size() <= 1) continue;
         // first pass to determine the root. notice that root can possibly not exist
         // i.e. two nodes sharing the same scope
         Scope *parent = ss[0];
@@ -704,9 +731,16 @@ void merge_scopes(const std::map<std::string, std::vector<Scope *>> &scopes) {
             }
         } else {
             // we need to find a parent and put all of them in the scope
-            return;
+            parent = find_parent(ss);
+            // because the parent doesn't have corresponding function
+            // we need to create a new scope
+            auto *target = parent->context->add_scope<Scope>(nullptr);
+            target->module = parent->module;
+            for (auto *s : ss) {
+                target->add_scope(s);
+            }
+            merge_scope(parent, target);
         }
-
     }
 }
 
