@@ -732,16 +732,7 @@ void merge_scopes(const std::map<std::string, std::vector<Scope *>> &scopes) {
                 }
             }
         } else {
-            // we need to find a parent and put all of them in the scope
-            parent = find_parent(ss);
-            // because the parent doesn't have corresponding function
-            // we need to create a new scope
-
-            auto *target = parent->context->add_scope<Scope>(parent);
-            target->module = parent->module;
-            for (auto *s : ss) {
-                merge_scope(target, s);
-            }
+            // leave the split function separate since they are doing different things
         }
     }
 }
