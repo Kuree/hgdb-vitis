@@ -11,5 +11,9 @@ find_package(LLVM REQUIRED CONFIG)
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 add_definitions(${LLVM_DEFINITIONS_LIST})
 
+if (CMAKE_BUILD_TYPE MATCHES "Debug")
+    add_compile_options(-DDEBUG)
+endif ()
+
 add_subdirectory(extern)
 add_subdirectory(python)

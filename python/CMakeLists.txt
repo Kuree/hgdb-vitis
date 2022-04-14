@@ -1,6 +1,6 @@
-add_library(hgdb-vitis ir.cc)
-target_include_directories(hgdb-vitis PUBLIC ${LLVM0_INCLUDE_DIRS})
-target_link_libraries(hgdb-vitis PUBLIC llvm::bitcode llvm::core llvm::support llvm::analysis llvm::bitcode)
+add_library(hgdb-vitis ir.cc verilog.cc)
+target_include_directories(hgdb-vitis PUBLIC ${LLVM0_INCLUDE_DIRS} ../extern/slang/include)
+target_link_libraries(hgdb-vitis PUBLIC llvm::bitcode llvm::core llvm::support llvm::analysis llvm::bitcode slangcompiler)
 set_property(TARGET hgdb-vitis PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_compile_options(hgdb-vitis PRIVATE -Wall -Wextra -Wpedantic -Werror -Wno-unused-parameter -Wno-deprecated-copy
         -Wno-unused-local-typedefs)
