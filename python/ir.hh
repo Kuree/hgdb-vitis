@@ -162,6 +162,11 @@ public:
     [[nodiscard]] Scope *copy() const override;
 };
 
+struct RTLInfo {
+    std::unordered_map<std::string, std::unordered_set<std::string>> signals;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> instances;
+};
+
 class Context {
 public:
     template <typename T, typename... Args>
@@ -185,9 +190,17 @@ public:
         return module_infos_;
     }
 
+    // we do this because the RTL info is defined in a different module with different CXX
+    // ABI string
+    void set_rtl_info(
+        const std::unordered_map<std::string, std::unordered_set<std::string>> &signals,
+        const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>
+            &instances);
+
 private:
     std::vector<std::unique_ptr<Scope>> scopes_;
     std::map<std::string, std::shared_ptr<ModuleInfo>> module_infos_;
+    RTLInfo info_;
 };
 
 Scope *get_debug_scope(const llvm::Function *function, Context &context);

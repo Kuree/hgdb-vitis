@@ -650,6 +650,14 @@ bool Context::has_module(const std::string &name) {
     return module_infos_.find(name) != module_infos_.end();
 }
 
+void Context::set_rtl_info(
+    const std::unordered_map<std::string, std::unordered_set<std::string>> &signals,
+    const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>
+        &instances) {
+    info_.signals = signals;
+    info_.instances = instances;
+}
+
 void StateInfo::add_instruction(const std::string &instr, const std::string &filename,
                                 uint32_t line) {
     LineInfo info{filename, line};
