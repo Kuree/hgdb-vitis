@@ -16,17 +16,31 @@
 
 namespace py = pybind11;
 
+struct RTLInfo {
+    std::unordered_map<std::string, std::unordered_set<std::string>> signals;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> instances;
+};
+
 class VisitSignals : public slang::ASTVisitor<VisitSignals, true, true> {
 public:
-    explicit VisitSignals(std::unordered_map<std::string, std::unordered_set<std::string>> &signals)
-        : signals_(signals) {}
+    explicit VisitSignals(
+        std::unordered_map<std::string, std::unordered_set<std::string>> &signals,
+        std::unordered_map<std::string, std::unordered_map<std::string, std::string>> &instances,
+        const slang::InstanceSymbol *inst)
+        : current_module_name(std::string(inst->getDefinition().name)),
+          signals_(signals),
+          instances_(instances) {}
 
     [[maybe_unused]] void handle(const slang::InstanceSymbol &sym) {
         auto def_name = std::string(sym.getDefinition().name);
-        if (signals_.find(def_name) != signals_.end()) return;
+        if (instances_.find(def_name) != instances_.end()) return;
+        auto inst_name = std::string(sym.name);
+        instances_[current_module_name].emplace(inst_name, def_name);
 
+        auto temp = current_module_name;
         current_module_name = def_name;
         visitDefault(sym);
+        current_module_name = temp;
     }
 
     [[maybe_unused]] void handle(const slang::NetSymbol &sym) {
@@ -43,10 +57,11 @@ public:
 
 private:
     std::unordered_map<std::string, std::unordered_set<std::string>> &signals_;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> &instances_;
 };
 
-std::unordered_map<std::string, std::unordered_set<std::string>> parse_verilog(
-    const std::vector<std::string> &files, const std::string &top_name) {
+std::unique_ptr<RTLInfo> parse_verilog(const std::vector<std::string> &files,
+                                       const std::string &top_name) {
     slang::SourceManager source_manager;
 
     slang::PreprocessorOptions preprocessor_options;
@@ -88,13 +103,16 @@ std::unordered_map<std::string, std::unordered_set<std::string>> parse_verilog(
         throw std::runtime_error("Unable to find top instance " + top_name);
     }
 
-    std::unordered_map<std::string, std::unordered_set<std::string>> res;
-    // visit them to build up the
-
-    VisitSignals vis(res);
+    auto res = std::make_unique<RTLInfo>();
+    VisitSignals vis(res->signals, res->instances, top);
     top->visit(vis);
 
     return res;
 }
 
-PYBIND11_MODULE(vitis_rtl, m) { m.def("parse_verilog", &parse_verilog); }
+PYBIND11_MODULE(vitis_rtl, m) {
+    py::class_<RTLInfo>(m, "RTLInfo")
+        .def_readonly("signals", &RTLInfo::signals)
+        .def_readonly("instances", &RTLInfo::instances);
+    m.def("parse_verilog", &parse_verilog);
+}

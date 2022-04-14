@@ -170,6 +170,12 @@ class DesignInfo:
         files = list(pathlib.Path(verilog_dir).rglob("*.v"))
         files = [str(f) for f in files]
         self.__rtl_info = vitis_rtl.parse_verilog(files, self.top_name)
+        import json
+        res = {}
+        insts = self.__rtl_info.instances
+        for n, v in insts.items():
+            res[n] = dict(v)
+        print(json.dumps(res))
 
     def __merge_module_states(self, module_name):
         instances = self.__context[module_name].instances
