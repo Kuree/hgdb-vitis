@@ -634,6 +634,22 @@ Scope *DeclInstruction::copy() const {
     return new_scope;
 }
 
+std::shared_ptr<ModuleInfo> Context::get_module(const std::string &name) {
+    if (module_infos_.find(name) == module_infos_.end())
+        return nullptr;
+    else
+        return module_infos_.at(name);
+}
+
+void Context::add_module(const std::string &name, std::shared_ptr<ModuleInfo> mod) {
+    mod->context = this;
+    module_infos_.emplace(name, std::move(mod));
+}
+
+bool Context::has_module(const std::string &name) {
+    return module_infos_.find(name) != module_infos_.end();
+}
+
 void StateInfo::add_instruction(const std::string &instr, const std::string &filename,
                                 uint32_t line) {
     LineInfo info{filename, line};
@@ -752,7 +768,8 @@ Scope *find_parent(const std::vector<Scope *> &scopes) {
     auto *scope = scopes[0];
     auto *mod = scope->module;
     ModuleInfo *parent_module = nullptr;
-    for (auto const &[name, module] : ModuleInfo::module_infos) {
+    auto const &module_infos = scope->context->module_infos();
+    for (auto const &[name, module] : module_infos) {
         // just need to find one
         // assuming there is no duplicated basic block split out
         if (parent_module) break;
@@ -874,22 +891,11 @@ std::map<std::string, Scope *> reorganize_scopes(
     return scopes;
 }
 
-std::map<std::string, std::shared_ptr<ModuleInfo>> ModuleInfo::module_infos = {};
-
 void ModuleInfo::add_instance(const std::string &m_name, const std::string &instance_name) {
-    if (module_infos.find(m_name) == module_infos.end()) {
+    if (!context->has_module(m_name)) {
         auto ptr = std::make_shared<ModuleInfo>(m_name);
-        module_infos.emplace(m_name, ptr);
+        context->add_module(m_name, ptr);
     }
-    auto module = module_infos.at(m_name);
+    auto module = context->get_module(m_name);
     instances.emplace(instance_name, module);
-}
-
-std::vector<std::string> ModuleInfo::module_names() {
-    std::vector<std::string> res;
-    res.reserve(module_infos.size());
-    for (auto const &[name, _] : module_infos) {
-        res.emplace_back(name);
-    }
-    return res;
 }

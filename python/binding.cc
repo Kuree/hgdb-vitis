@@ -40,7 +40,13 @@ void bind_scope(py::module &m) {
         .def("serialize", &Scope::serialize)
         .def("bind_state", &Scope::bind_state)
         .def_readonly("instruction", &Scope::instruction);
-    py::class_<Context>(m, "Context").def(py::init<>());
+    py::class_<Context>(m, "Context")
+        .def(py::init<>())
+        .def("__getitem__", &Context::get_module)
+        .def("__setitem__", &Context::add_module)
+        .def("__contains__", &Context::has_module)
+        .def("modules", [](Context &context) { return context.module_infos(); });
+
     py::class_<StateInfo>(m, "StateInfo")
         .def(py::init<uint32_t>())
         .def("add_instr", py::overload_cast<const std::string &>(&StateInfo::add_instruction))
@@ -66,12 +72,6 @@ void bind_scope(py::module &m) {
         .def_readwrite("function", &ModuleInfo::function)
         .def_readwrite("instances", &ModuleInfo::instances)
         .def("add_instance", &ModuleInfo::add_instance);
-
-    // static methods
-    m.def("has_module", &ModuleInfo::has_module)
-        .def("set_module", &ModuleInfo::set_module)
-        .def("get_module", &ModuleInfo::get_module)
-        .def("module_names", &ModuleInfo::module_names);
 
     m.def("reorganize_scopes", reorganize_scopes);
 }

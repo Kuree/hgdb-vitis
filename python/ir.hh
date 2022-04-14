@@ -74,10 +74,9 @@ struct SerializationOptions {
 };
 
 class Scope;
+class Context;
 
 struct ModuleInfo {
-    static std::map<std::string, std::shared_ptr<ModuleInfo>> module_infos;
-
     std::string module_name;
 
     llvm::Function *function = nullptr;
@@ -88,27 +87,12 @@ struct ModuleInfo {
     std::map<std::string, std::shared_ptr<ModuleInfo>> instances;
 
     Scope *root_scope = nullptr;
+    Context *context = nullptr;
 
     explicit ModuleInfo(std::string module_name) : module_name(std::move(module_name)) {}
 
     void add_instance(const std::string &m_name, const std::string &instance_name);
-
-    static inline std::shared_ptr<ModuleInfo> get_module(const std::string &name) {
-        return module_infos.at(name);
-    }
-
-    static inline void set_module(const std::string &name, const std::shared_ptr<ModuleInfo> &mod) {
-        module_infos.emplace(name, mod);
-    }
-
-    static inline bool has_module(const std::string &name) {
-        return module_infos.find(name) != module_infos.end();
-    }
-
-    static std::vector<std::string> module_names();
 };
-
-class Context;
 
 class Scope {
 public:
@@ -188,8 +172,22 @@ public:
         return reinterpret_cast<T *>(scopes_.emplace_back(std::move(entry)).get());
     }
 
+    std::shared_ptr<ModuleInfo> get_module(const std::string &name);
+    void add_module(const std::string &name, std::shared_ptr<ModuleInfo> mod);
+    [[nodiscard]] bool has_module(const std::string &name);
+
+    [[nodiscard]] inline const std::map<std::string, std::shared_ptr<ModuleInfo>> &module_infos()
+        const {
+        return module_infos_;
+    }
+
+    inline std::map<std::string, std::shared_ptr<ModuleInfo>> &module_infos() {
+        return module_infos_;
+    }
+
 private:
     std::vector<std::unique_ptr<Scope>> scopes_;
+    std::map<std::string, std::shared_ptr<ModuleInfo>> module_infos_;
 };
 
 Scope *get_debug_scope(const llvm::Function *function, Context &context);
