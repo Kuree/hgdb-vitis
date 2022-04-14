@@ -203,17 +203,42 @@ std::string resolve_filename(const std::string &filename, const std::string &dir
     return res.string();
 }
 
-Scope *process_var_decl(const llvm::CallInst &call_inst, Context &context, Scope *root_scope) {
+// NOLINTNEXTLINE
+void find_array_range(const llvm::MDNode *node, std::vector<uint32_t> &res) {
+    if (!node) return;
+    auto di = llvm::DIDescriptor(node);
+    auto tag = di.getTag();
+    if (tag == llvm::dwarf::dwarf_constants::DW_TAG_subrange_type) {
+        auto lo_op = llvm::cast<llvm::ConstantInt>(node->getOperand(1));
+        auto hi_op = llvm::cast<llvm::ConstantInt>(node->getOperand(2));
+        uint32_t lo = lo_op->getLimitedValue();
+        uint32_t hi = hi_op->getLimitedValue();
+        // inclusive
+        res.emplace_back(hi - lo + 1);
+    }
+    auto num_op = node->getNumOperands();
+    for (auto i = 0u; i < num_op; i++) {
+        auto op = node->getOperand(i);
+        if (!op) continue;
+        if (auto *n = llvm::dyn_cast<llvm::MDNode>(op)) {
+            find_array_range(n, res);
+        }
+    }
+}
+
+std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &context,
+                                      Scope *root_scope) {
     auto *value = llvm::cast<llvm::MDNode>(call_inst.getOperand(0))->getOperand(0);
     auto *desc = llvm::cast<llvm::MDNode>(call_inst.getOperand(1));
     auto num_op = desc->getNumOperands();
     std::string var_name;
     std::string value_name;
 
-    if (!value->hasName()) return nullptr;
+    if (!value->hasName()) return {};
     value_name = value->getName().str();
 
     uint32_t line_num = 0;
+    std::vector<uint32_t> array_range;
     for (auto i = 0u; i < num_op; i++) {
         auto *op = desc->getOperand(i);
         if (!op) continue;
@@ -223,38 +248,68 @@ Scope *process_var_decl(const llvm::CallInst &call_inst, Context &context, Scope
         } else if (i > 0 && llvm::isa<llvm::ConstantInt>(op) && line_num == 0) {
             auto c = llvm::cast<llvm::ConstantInt>(op);
             line_num = c->getLimitedValue();
-        }
-    }
-    // try to guess the actual RTL name
-    // obtain the value and see the type
-    // for now we just hack it
-    if (var_name.find('[') != std::string::npos) {
-        // this is an auto variable
-        // very likely created from an array
-        value_name.append("_q0");
-    } else {
-        // normal wire
-        // need to follow the use
-        // also need to read out the type in case it's an array, which has different
-        // TODO: check variable type and produce vector if necessary
-        for (auto use = value->use_begin(); use != value->use_end(); use++) {
-            if (llvm::isa<llvm::LoadInst>(*use)) {
-                auto load = llvm::cast<llvm::LoadInst>(*use);
-                value_name = "ap_sig_allocacmp_" + load->getName().str();
-                break;
+        } else if (llvm::isa<llvm::MDNode>(op)) {
+            auto *node = llvm::cast<llvm::MDNode>(op);
+            auto di = llvm::DIDescriptor(node);
+            auto tag = di.getTag();
+            if (tag == llvm::dwarf::dwarf_constants::DW_TAG_array_type) {
+                // it's an array
+                // recursively loop through each operand and finding out if there is one marked
+                // as subrange type
+                find_array_range(node, array_range);
             }
         }
     }
 
-    Variable var(var_name, value_name);
-    // compute the debugging scope
-    // for now we put everything in the same scope. Need to refactor this to compute
-    // actual debug scope
-    auto debug_loc = call_inst.getDebugLoc();
-    uint32_t line = debug_loc.getLine();
-    if (line == 0) line = line_num;
-    auto *s = context.add_scope<DeclInstruction>(root_scope, var, line);
-    return s;
+    std::vector<Scope *> res;
+    auto add_var = [&](const std::string &front_name, const std::string &rtl_name) {
+        Variable var(front_name, rtl_name);
+        // compute the debugging scope
+        // for now we put everything in the same scope. Need to refactor this to compute
+        // actual debug scope
+        auto debug_loc = call_inst.getDebugLoc();
+        uint32_t line = debug_loc.getLine();
+        if (line == 0) line = line_num;
+        auto *s = context.add_scope<DeclInstruction>(root_scope, var, line);
+        res.emplace_back(s);
+    };
+    // try to guess the actual RTL name
+    // obtain the value and see the type
+    // for now we just hack it
+    bool already_flatten = var_name.find('[') != std::string::npos;
+    if (!array_range.empty() && !already_flatten) {
+        // we need to flatten the array
+        if (array_range.size() != 2) {
+            throw std::runtime_error("Only 2-dim array is implemented");
+        }
+        for (auto i = 0u; i < array_range[0]; i++) {
+            std::string front_name = var_name + "." + std::to_string(i);
+            // hgdb will query the ram type, which is an unpacked array
+            std::string rtl_name = var_name + '_' + std::to_string(i) + "_U.ram";
+
+            add_var(front_name, rtl_name);
+        }
+    } else {
+        if (already_flatten) {
+            // this is an auto variable
+            // very likely created from an array
+            value_name.append("_q0");
+        } else {
+            // normal wire
+            // need to follow the use
+            // also need to read out the type in case it's an array, which has different
+            for (auto use = value->use_begin(); use != value->use_end(); use++) {
+                if (llvm::isa<llvm::LoadInst>(*use)) {
+                    auto load = llvm::cast<llvm::LoadInst>(*use);
+                    value_name = "ap_sig_allocacmp_" + load->getName().str();
+                    break;
+                }
+            }
+        }
+        add_var(var_name, value_name);
+    }
+
+    return res;
 }
 
 Scope *get_debug_scope(const llvm::Function *function, Context &context) {
@@ -272,7 +327,7 @@ Scope *get_debug_scope(const llvm::Function *function, Context &context) {
             auto debug_loc = instr.getDebugLoc();
             auto *node = debug_loc.getAsMDNode(*get_llvm_context());
 
-            Scope *res = nullptr;
+            std::vector<Scope *> res;
             if (llvm::isa<llvm::CallInst>(instr)) {
                 auto const &call_inst = llvm::cast<llvm::CallInst>(instr);
                 auto const *called_function = call_inst.getCalledFunction();
@@ -284,36 +339,38 @@ Scope *get_debug_scope(const llvm::Function *function, Context &context) {
                 }
             }
 
-            if (!res) {
+            if (res.empty()) {
                 // normal block
                 auto line = debug_loc.getLine();
                 if (line > 0 && lines.find(line) == lines.end()) {
                     auto *s = context.add_scope<Instruction>(root_scope, line);
                     lines.emplace(line);
-                    res = s;
+                    res.emplace_back(s);
                 }
             }
 
             // invalid
-            if (!res) continue;
+            if (res.empty()) continue;
 
-            res->instruction = &instr;
+            for (auto *scope : res) {
+                scope->instruction = &instr;
 
-            // for file name. some declare might not have
-            if (!node) continue;
-            auto loc = llvm::DILocation(node);
-            auto resolved_filename =
-                resolve_filename(loc.getFilename().str(), loc.getDirectory().str());
-            auto raw_filename = loc.getFilename().str();
+                // for file name. some declare might not have
+                if (!node) continue;
+                auto loc = llvm::DILocation(node);
+                auto resolved_filename =
+                    resolve_filename(loc.getFilename().str(), loc.getDirectory().str());
+                auto raw_filename = loc.getFilename().str();
 
-            if (root_scope->filename.empty()) {
-                root_scope->filename = resolved_filename;
-                root_scope->raw_filename = raw_filename;
-            }
+                if (root_scope->filename.empty()) {
+                    root_scope->filename = resolved_filename;
+                    root_scope->raw_filename = raw_filename;
+                }
 
-            if (res->get_filename() != resolved_filename) {
-                res->filename = resolved_filename;
-                res->raw_filename = raw_filename;
+                if (scope->get_filename() != resolved_filename) {
+                    scope->filename = resolved_filename;
+                    scope->raw_filename = raw_filename;
+                }
             }
         }
     }
