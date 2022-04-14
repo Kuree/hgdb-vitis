@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ElementTree
 
 class DesignInfo:
     def __init__(self, solution):
+        self.__context = vitis.Context()
         self.__solution = solution
         self.__parse_design_xml()
         self.__parse_llvm_bc()
@@ -36,7 +37,7 @@ class DesignInfo:
         assert top_module_name == self.top_name, "Design database files corrupted"
         self.top_module = vitis.ModuleInfo(top_module_name)
         # create top module
-        vitis.set_module(top_module_name, self.top_module)
+        self.__context[top_module_name] = self.top_module
         self.__build_instance_hierarchy(top_module_name, top_module)
 
     def __parse_debug_bc(self):
@@ -51,7 +52,7 @@ class DesignInfo:
         for child in inst_list.findall("Instance"):
             inst_name = child.find("InstName").text
             module_name = child.find("ModuleName").text
-            mod = vitis.get_module(parent_name)
+            mod = self.__context[parent_name]
             mod.add_instance(module_name, inst_name)
             # recursive call
             self.__build_instance_hierarchy(module_name, child)
@@ -73,9 +74,9 @@ class DesignInfo:
             func = self.__o3_bc.get_function(name)
             assert func is not None, "Cannot find function " + name
             module_name = func.demangled_name
-            assert vitis.has_module(module_name)
-            vitis.get_module(module_name).function = func
-        vitis.get_module(self.top_name).function = top_function
+            assert module_name in self.__context
+            self.__context[module_name].function = func
+        self.__context[self.top_name].function = top_function
 
     def __get_report_lines(self, module_name):
         rpt_path = os.path.join(self.__solution, ".autopilot", "db", module_name + ".verbose.rpt")
@@ -86,7 +87,7 @@ class DesignInfo:
 
     def __parse_signal_names(self, module_name):
         # this is similar to the state transition since they're in the same file
-        instances = vitis.get_module(module_name).instances
+        instances = self.__context[module_name].instances
         for m in instances.values():
             # recursively parse it
             self.__parse_signal_names(m.module_name)
@@ -112,13 +113,13 @@ class DesignInfo:
                 signal = vitis.SignalInfo(name, width)
                 module_signals[name] = signal
 
-        vitis.get_module(module_name).signals = module_signals
+        self.__context[module_name].signals = module_signals
 
     def __parse_state_transition(self, module_name):
         # we need to parse state transition for every module since they are independent
 
         # recursively parse the state transition
-        instances = vitis.get_module(module_name).instances
+        instances = self.__context[module_name].instances
         for m in instances.values():
             # recursively parse it
             self.__parse_state_transition(m.module_name)
@@ -160,7 +161,7 @@ class DesignInfo:
                     else:
                         current_state.add_instr(instr)
 
-        vitis.get_module(module_name).state_infos = module_state_info
+        self.__context[module_name].state_infos = module_state_info
 
     def __parse_rtl(self):
         # need to blob all the verilog files
@@ -171,53 +172,25 @@ class DesignInfo:
         self.__rtl_info = vitis_rtl.parse_verilog(files, self.top_name)
 
     def __merge_module_states(self, module_name):
-        instances = vitis.get_module(module_name).instances
+        instances = self.__context[module_name].instances
         for m in instances.values():
             self.__merge_module_states(m.module_name)
 
-        signals = vitis.get_module(module_name).signals
-        info = vitis.get_module(module_name).state_infos
-        vitis.get_module(module_name).state_infos = vitis.merge_states(info, signals, module_name)
-
-    @staticmethod
-    def __get_state_related_instr(module_name, function, state_id):
-        # based on locations annotated in the state report. Notice that the location information is also messed up
-        # due to function inlining
-        module = vitis.get_module(module_name)
-        instructions = module.state_infos[state_id].instructions
-        loc_map = function.get_instr_loc()
-        res = []
-        line_info = set()
-        for _, debug in instructions:
-            if debug is None:
-                continue
-            # decode filename and line
-            filename, line_num = debug
-            if filename in loc_map and line_num in loc_map[filename]:
-                # we only need one instruction for that line
-                entry = (filename, line_num)
-                if entry in line_info:
-                    continue
-                line_info.add(entry)
-                instr = loc_map[filename][line_num][0]
-
-                res.append(instr)
-
-        return res
+        signals = self.__context[module_name].signals
+        info = self.__context[module_name].state_infos
+        self.__context[module_name].state_infos = vitis.merge_states(info, signals, module_name)
 
     def dump_symbol_table(self, output, remap):
-        context = vitis.Context()
         options = vitis.SerializationOptions()
         for b, a in remap.items():
             options.add_mapping(b, a)
 
         tables = {}
         module_scopes = {}
-        module_names = vitis.module_names()
-        for module_name in module_names:
-            module = vitis.get_module(module_name)
+        modules = self.__context.modules()
+        for module_name, module in modules.items():
             function = module.function
-            scope = function.get_debug_scope(context)
+            scope = function.get_debug_scope(self.__context)
             scope.bind_state(module)
             module_scopes[module_name] = scope
 
@@ -232,7 +205,7 @@ class DesignInfo:
             res += "{"
             res += "\"type\":\"module\",\"name\":\"" + module_name + "\",\"scope\":[" + s + "],\"instances\":["
             # generate instances
-            instances = vitis.get_module(module_name).instances
+            instances = self.__context[module_name].instances
             i = 0
             for inst_name, inst in instances.items():
                 res += "{\"name\":\"" + inst_name + "\","
