@@ -191,7 +191,7 @@ class DesignInfo:
         modules = self.__context.modules()
         for module_name, module in modules.items():
             function = module.function
-            scope = function.get_debug_scope(self.__context)
+            scope = function.get_debug_scope(self.__context, module)
             scope.bind_state(module)
             module_scopes[module_name] = scope
 

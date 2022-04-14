@@ -227,7 +227,7 @@ void find_array_range(const llvm::MDNode *node, std::vector<uint32_t> &res) {
 }
 
 std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &context,
-                                      Scope *root_scope) {
+                                      Scope *root_scope, const RTLInfo &rtl_info) {
     auto *value = llvm::cast<llvm::MDNode>(call_inst.getOperand(0))->getOperand(0);
     auto *desc = llvm::cast<llvm::MDNode>(call_inst.getOperand(1));
     auto num_op = desc->getNumOperands();
@@ -262,7 +262,34 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
     }
 
     std::vector<Scope *> res;
-    auto add_var = [&](const std::string &front_name, const std::string &rtl_name) {
+    auto add_var = [&](const std::string &front_name, std::string rtl_name,
+                       const std::string &instance_name = {}) {
+        // need to check legality of the signal
+        auto const module_name = root_scope->module->module_name;
+
+        if (instance_name.empty()) {
+            if (rtl_info.signals.find(module_name) == rtl_info.signals.end()) {
+                return;
+            }
+            auto const &signals = rtl_info.signals.at(module_name);
+            if (signals.find(rtl_name) == signals.end()) {
+                return;
+            }
+        } else {
+            auto const &instances = rtl_info.instances.at(module_name);
+            if (instances.find(instance_name) == instances.end()) {
+                return;
+            }
+            auto const &target_module_name = instances.at(instance_name);
+            if (rtl_info.signals.find(target_module_name) == rtl_info.signals.end()) {
+                return;
+            }
+            auto const &signals = rtl_info.signals.at(module_name);
+            if (signals.find(rtl_name) == signals.end()) {
+                return;
+            }
+            rtl_name = instance_name + "." + rtl_name;
+        }
         Variable var(front_name, rtl_name);
         // compute the debugging scope
         // for now we put everything in the same scope. Need to refactor this to compute
@@ -285,9 +312,9 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
         for (auto i = 0u; i < array_range[0]; i++) {
             std::string front_name = var_name + "." + std::to_string(i);
             // hgdb will query the ram type, which is an unpacked array
-            std::string rtl_name = var_name + '_' + std::to_string(i) + "_U.ram";
-
-            add_var(front_name, rtl_name);
+            std::string instance_name = var_name + '_' + std::to_string(i) + "_U";
+            auto rtl_name = "ram";
+            add_var(front_name, rtl_name, instance_name);
         }
     } else {
         if (already_flatten) {
@@ -312,9 +339,10 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
     return res;
 }
 
-Scope *get_debug_scope(const llvm::Function *function, Context &context) {
+Scope *get_debug_scope(const llvm::Function *function, Context &context, ModuleInfo *module) {
     if (!function) return nullptr;
     auto *root_scope = context.add_scope<Scope>(nullptr);
+    root_scope->module = module;
     std::unordered_map<const llvm::DIScope *, Scope *> scope_mapping;
 
     std::unordered_set<uint32_t> lines;
@@ -334,7 +362,7 @@ Scope *get_debug_scope(const llvm::Function *function, Context &context) {
                 if (called_function) {
                     auto name = called_function->getName();
                     if (name == "llvm.dbg.declare") {
-                        res = process_var_decl(call_inst, context, root_scope);
+                        res = process_var_decl(call_inst, context, root_scope, context.rtl_info());
                     }
                 }
             }

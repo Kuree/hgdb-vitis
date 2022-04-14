@@ -197,13 +197,15 @@ public:
         const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>
             &instances);
 
+    inline RTLInfo &rtl_info() { return info_; }
+
 private:
     std::vector<std::unique_ptr<Scope>> scopes_;
     std::map<std::string, std::shared_ptr<ModuleInfo>> module_infos_;
     RTLInfo info_;
 };
 
-Scope *get_debug_scope(const llvm::Function *function, Context &context);
+Scope *get_debug_scope(const llvm::Function *function, Context &context, ModuleInfo *module);
 
 // create new state info since Python doesn't work well with pass by reference via pybind
 std::map<uint32_t, StateInfo> merge_states(const std::map<uint32_t, StateInfo> &state_infos,
