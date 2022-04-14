@@ -34,11 +34,12 @@ class CMakeBuild(build_ext):
                       '-DPYTHON_EXECUTABLE=' + sys.executable]
 
         # llvm directory
-        llvm_dir = os.path.join(self.build_temp, "llvm")
+        root_dir = os.path.dirname(__file__)
+        llvm_dir = os.path.join(root_dir, "llvm")
         if not os.path.exists(llvm_dir):
-            subprocess.call(["wget", LLVM_URL], cwd=self.build_temp)
-            subprocess.call(["tar", "xzf", f"{LLVM_NAME}.tar.gz"], cwd=self.build_temp)
-            subprocess.call(["mv", LLVM_NAME, "llvm"], cwd=self.build_temp)
+            subprocess.call(["wget", LLVM_URL], cwd=root_dir)
+            subprocess.call(["tar", "xzf", f"{LLVM_NAME}.tar.gz"], cwd=root_dir)
+            subprocess.call(["mv", LLVM_NAME, "llvm"], cwd=root_dir)
 
         # test env variable to determine whether to build in debug
         if os.environ.get("DEBUG") is not None:
