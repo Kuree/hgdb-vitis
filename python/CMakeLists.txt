@@ -1,10 +1,10 @@
-add_library(hgdb-vitis ir.cc verilog.cc)
+add_library(hgdb-vitis ir.cc)
 target_include_directories(hgdb-vitis PUBLIC ${LLVM0_INCLUDE_DIRS} ../extern/slang/include)
-target_link_libraries(hgdb-vitis PUBLIC llvm::bitcode llvm::core llvm::support llvm::analysis llvm::bitcode slangcompiler)
+target_link_libraries(hgdb-vitis PUBLIC llvm::bitcode llvm::core llvm::support llvm::analysis llvm::bitcode)
 set_property(TARGET hgdb-vitis PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_compile_options(hgdb-vitis PRIVATE -Wall -Wextra -Wpedantic -Werror -Wno-unused-parameter -Wno-deprecated-copy
         -Wno-unused-local-typedefs)
-target_compile_definitions(hgdb-vitis PUBLIC -D_GLIBCXX_USE_CXX11_ABI=0)
+target_compile_definitions(hgdb-vitis PUBLIC -D_GLIBCXX_USE_CXX11_ABI=0 span_CONFIG_SELECT_SPAN=1)
 
 pybind11_add_module(vitis binding.cc)
 target_link_libraries(vitis PUBLIC hgdb-vitis)
@@ -12,6 +12,9 @@ target_link_libraries(vitis PUBLIC hgdb-vitis)
 ## Xilinx you should upgrade your LLVM toolchain!
 target_compile_options(vitis PRIVATE -Wall -Wextra -Wpedantic -Werror -Wno-unused-parameter -Wno-deprecated-copy
         -Wno-unused-local-typedefs)
+
+pybind11_add_module(vitis_rtl verilog.cc)
+target_link_libraries(vitis_rtl PUBLIC slangcompiler)
 
 pybind11_add_module(vitis0 debug.cc)
 set_property(TARGET vitis0 PROPERTY POSITION_INDEPENDENT_CODE ON)

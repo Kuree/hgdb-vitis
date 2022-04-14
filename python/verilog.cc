@@ -1,7 +1,9 @@
-#include "verilog.hh"
+
 
 #include <iostream>
 
+#include "pybind11/pybind11.h"
+#include "pybind11/stl.h"
 #include "slang/compilation/Compilation.h"
 #include "slang/diagnostics/DiagnosticEngine.h"
 #include "slang/parsing/Parser.h"
@@ -11,6 +13,8 @@
 #include "slang/symbols/VariableSymbols.h"
 #include "slang/syntax/SyntaxTree.h"
 #include "slang/text/SourceManager.h"
+
+namespace py = pybind11;
 
 class VisitSignals : public slang::ASTVisitor<VisitSignals, true, true> {
 public:
@@ -92,3 +96,5 @@ std::unordered_map<std::string, std::unordered_set<std::string>> parse_verilog(
 
     return res;
 }
+
+PYBIND11_MODULE(vitis_rtl, m) { m.def("parse_verilog", &parse_verilog); }

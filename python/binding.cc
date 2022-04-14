@@ -1,13 +1,8 @@
 #include "ir.hh"
 #include "pybind11/pybind11.h"
 #include "pybind11/stl.h"
-#include "verilog.hh"
 
 namespace py = pybind11;
-
-void init_rtl(py::module &m) {
-    m.def("parse_verilog", parse_verilog);
-}
 
 void bind_llvm(py::module &m) {
     py::class_<llvm::Module>(m, "Module")
@@ -84,6 +79,5 @@ void bind_scope(py::module &m) {
 PYBIND11_MODULE(vitis, m) {
     bind_llvm(m);
     bind_scope(m);
-    init_rtl(m);
     m.def("parse_llvm_bitcode", &parse_llvm_bitcode, py::return_value_policy::reference);
 }

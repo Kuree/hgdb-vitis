@@ -5,6 +5,7 @@ import argparse
 import pathlib
 import vitis
 import vitis0
+import vitis_rtl
 import re
 import xml.etree.ElementTree as ElementTree
 
@@ -18,6 +19,7 @@ class DesignInfo:
         self.__parse_signal_names(self.top_name)
         self.__merge_module_states(self.top_name)
         self.__parse_debug_bc()
+        self.__parse_rtl()
 
     def __parse_design_xml(self):
         xml_files = list(pathlib.Path(self.__solution).rglob("*.design.xml"))
@@ -159,6 +161,14 @@ class DesignInfo:
                         current_state.add_instr(instr)
 
         vitis.get_module(module_name).state_infos = module_state_info
+
+    def __parse_rtl(self):
+        # need to blob all the verilog files
+        verilog_dir = os.path.join(self.__solution, "syn", "verilog")
+        assert os.path.exists(verilog_dir), "Verilog directory does not exist " + verilog_dir
+        files = list(pathlib.Path(verilog_dir).rglob("*.v"))
+        files = [str(f) for f in files]
+        self.__rtl_info = vitis_rtl.parse_verilog(files, self.top_name)
 
     def __merge_module_states(self, module_name):
         instances = vitis.get_module(module_name).instances
