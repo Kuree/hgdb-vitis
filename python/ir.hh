@@ -94,6 +94,8 @@ struct ModuleInfo {
     void add_instance(const std::string &m_name, const std::string &instance_name);
 
     void remove_definition(const std::string &target_module_name);
+
+    [[nodiscard]] std::string rtl_module_name() const;
 };
 
 class Scope {

@@ -265,7 +265,7 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
     auto add_var = [&](const std::string &front_name, std::string rtl_name,
                        const std::string &instance_name = {}) {
         // need to check legality of the signal
-        auto const module_name = root_scope->module->module_name;
+        auto const module_name = root_scope->module->rtl_module_name();
 
         if (instance_name.empty()) {
             if (rtl_info.signals.find(module_name) == rtl_info.signals.end()) {
@@ -962,5 +962,13 @@ void ModuleInfo::remove_definition(const std::string &target_module_name) {
     // recursively remove stuff
     for (auto const &[n, mod] : instances) {
         mod->remove_definition(target_module_name);
+    }
+}
+
+std::string ModuleInfo::rtl_module_name() const {
+    if (module_name == context->top_name) {
+        return module_name;
+    } else {
+        return context->top_name + "_" + module_name;
     }
 }
