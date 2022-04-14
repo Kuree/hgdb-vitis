@@ -269,24 +269,24 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
 
         if (instance_name.empty()) {
             if (rtl_info.signals.find(module_name) == rtl_info.signals.end()) {
-                return;
+                return false;
             }
             auto const &signals = rtl_info.signals.at(module_name);
             if (signals.find(rtl_name) == signals.end()) {
-                return;
+                return false;
             }
         } else {
             auto const &instances = rtl_info.instances.at(module_name);
             if (instances.find(instance_name) == instances.end()) {
-                return;
+                return false;
             }
             auto const &target_module_name = instances.at(instance_name);
             if (rtl_info.signals.find(target_module_name) == rtl_info.signals.end()) {
-                return;
+                return false;
             }
-            auto const &signals = rtl_info.signals.at(module_name);
+            auto const &signals = rtl_info.signals.at(target_module_name);
             if (signals.find(rtl_name) == signals.end()) {
-                return;
+                return false;
             }
             rtl_name = instance_name + "." + rtl_name;
         }
@@ -299,6 +299,7 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
         if (line == 0) line = line_num;
         auto *s = context.add_scope<DeclInstruction>(root_scope, var, line);
         res.emplace_back(s);
+        return true;
     };
     // try to guess the actual RTL name
     // obtain the value and see the type
@@ -309,12 +310,20 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
         if (array_range.size() != 2) {
             throw std::runtime_error("Only 2-dim array is implemented");
         }
+        bool success = false;
         for (auto i = 0u; i < array_range[0]; i++) {
             std::string front_name = var_name + "." + std::to_string(i);
             // hgdb will query the ram type, which is an unpacked array
             std::string instance_name = var_name + '_' + std::to_string(i) + "_U";
+            std::string rtl_name = "ram";
+            success = add_var(front_name, rtl_name, instance_name);
+        }
+        if (!success) {
+            // could be just a flattened array
+            // hgdb will query the ram type, which is an unpacked array
+            std::string instance_name = var_name + "_U";
             auto rtl_name = "ram";
-            add_var(front_name, rtl_name, instance_name);
+            add_var(var_name, rtl_name, instance_name);
         }
     } else {
         if (already_flatten) {
