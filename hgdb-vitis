@@ -30,6 +30,7 @@ class DesignInfo:
         # also set the top name
         filename = os.path.basename(xml_file)
         self.top_name = filename.replace(".design.xml", "")
+        self.__context.top_name = self.top_name
         tree = ElementTree.parse(xml_file)
         root = tree.getroot()
         top_module = root.find("./RTLDesignHierarchy/TopModule")

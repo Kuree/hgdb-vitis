@@ -46,7 +46,8 @@ void bind_scope(py::module &m) {
         .def("__setitem__", &Context::add_module)
         .def("__contains__", &Context::has_module)
         .def("modules", [](Context &context) { return context.module_infos(); })
-        .def("set_rtl_info", &Context::set_rtl_info);
+        .def("set_rtl_info", &Context::set_rtl_info)
+        .def_readwrite("top_name", &Context::top_name);
 
     py::class_<StateInfo>(m, "StateInfo")
         .def(py::init<uint32_t>())

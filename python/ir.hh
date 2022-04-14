@@ -92,6 +92,8 @@ struct ModuleInfo {
     explicit ModuleInfo(std::string module_name) : module_name(std::move(module_name)) {}
 
     void add_instance(const std::string &m_name, const std::string &instance_name);
+
+    void remove_definition(const std::string &target_module_name);
 };
 
 class Scope {
@@ -198,6 +200,8 @@ public:
             &instances);
 
     inline RTLInfo &rtl_info() { return info_; }
+
+    std::string top_name;
 
 private:
     std::vector<std::unique_ptr<Scope>> scopes_;

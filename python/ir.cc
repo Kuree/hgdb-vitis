@@ -925,6 +925,8 @@ std::map<std::string, Scope *> reorganize_scopes(
             s->clear_empty();
             if (s->scopes.empty()) {
                 remove.emplace(n);
+                auto *context = s->context;
+                context->get_module(context->top_name)->remove_definition(n);
             }
         }
 
@@ -943,4 +945,22 @@ void ModuleInfo::add_instance(const std::string &m_name, const std::string &inst
     }
     auto module = context->get_module(m_name);
     instances.emplace(instance_name, module);
+}
+
+// NOLINTNEXTLINE
+void ModuleInfo::remove_definition(const std::string &target_module_name) {
+    std::unordered_set<std::string> insts;
+    for (auto const &[n, mod] : instances) {
+        if (mod->module_name == target_module_name) {
+            insts.emplace(n);
+        }
+    }
+    for (auto const &n : insts) {
+        instances.erase(n);
+    }
+
+    // recursively remove stuff
+    for (auto const &[n, mod] : instances) {
+        mod->remove_definition(target_module_name);
+    }
 }
