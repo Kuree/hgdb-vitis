@@ -6,7 +6,6 @@
 namespace py = pybind11;
 
 void init_rtl(py::module &m) {
-    py::class_<NamedScope>(m, "NamedScope").def_readonly("name", &NamedScope::name);
     m.def("parse_verilog", parse_verilog);
 }
 
