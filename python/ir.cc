@@ -473,14 +473,14 @@ std::string Scope::serialize(const SerializationOptions &options) const {
     if (!member.empty()) {
         ss << "," << member;
     }
-    // TODO: use variable tracking for state IDs. this is to avoid issues where the symbols
-    //  gets messed up after moving scopes around
     if (!state_ids.empty()) {
         ss << R"(,"condition":")";
         // we hardcode the idle here
-        ss << "(!ap_idle)&&(";
+        auto idle = instance_prefix + "ap_idle";
+        auto fsm = instance_prefix + "ap_CS_fsm";
+        ss << "(!" << idle << ")&&(";
         for (auto i = 0u; i < state_ids.size(); i++) {
-            ss << "(ap_CS_fsm[" << (state_ids[i] - 1) << "])";
+            ss << "(" << fsm << "[" << (state_ids[i] - 1) << "])";
             if (i != (state_ids.size() - 1)) {
                 ss << "||";
             }
@@ -782,6 +782,7 @@ void merge_scope(Scope *parent, Scope *child) {
         prefix.append(n).append(".");
         prefixes.pop();
     }
+
     // fix all the variable declaration
 
     {
@@ -804,6 +805,7 @@ void merge_scope(Scope *parent, Scope *child) {
 
     // merge the child into parent
     for (auto *s : new_child->scopes) {
+        s->instance_prefix = prefix;
         parent->add_scope(s);
     }
     new_child->scopes.clear();

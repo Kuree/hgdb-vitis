@@ -108,9 +108,12 @@ public:
     // one single line can have multiple ids
     std::vector<uint32_t> state_ids;
     const llvm::Instruction *instruction = nullptr;
+    // used to indicating scoping changes (moved up)
+    std::string instance_prefix;
 
     Scope *parent_scope;
     ModuleInfo *module = nullptr;
+    Context *context = nullptr;
 
     explicit Scope(Scope *parent_scope) : parent_scope(parent_scope) {}
 
@@ -132,7 +135,7 @@ public:
 
     [[nodiscard]] virtual Scope *copy() const;
 
-    Context *context = nullptr;
+    virtual ~Scope() = default;
 
 private:
     [[nodiscard]] virtual std::string serialize_member() const { return {}; }
