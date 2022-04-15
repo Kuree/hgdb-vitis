@@ -473,6 +473,8 @@ std::string Scope::serialize(const SerializationOptions &options) const {
     if (!member.empty()) {
         ss << "," << member;
     }
+    // TODO: use variable tracking for state IDs. this is to avoid issues where the symbols
+    //  gets messed up after moving scopes around
     if (!state_ids.empty()) {
         ss << R"(,"condition":")";
         // we hardcode the idle here
