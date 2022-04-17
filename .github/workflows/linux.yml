@@ -1,0 +1,28 @@
+name: CI Test
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Checkout submodules 🖥️
+      shell: bash
+      run: |
+        git submodule update --init
+    - name: Install dependencies
+      shell: bash
+      run: | 
+        sudo pip3 install libhgdb pytest
+    - name: Install package
+      shell: bash
+      run: pip3 install -e .
+    - name: Download test vectors
+      shell: bash
+      run: |
+        ./scripts/download_test_vectors.sh
+    - name: Run tests ⚙️
+      shell: bash
+      run: |
+        pytest tests -v
