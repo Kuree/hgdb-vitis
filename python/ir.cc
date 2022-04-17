@@ -326,10 +326,13 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
             add_var(var_name, rtl_name, instance_name);
         }
     } else {
+        std::string instance_name;
         if (already_flatten) {
             // this is an auto variable
             // very likely created from an array
-            value_name.append("_q0");
+            // use ram as well
+            instance_name = value_name + "_U";
+            value_name = "ram";
         } else {
             // normal wire
             // need to follow the use
@@ -342,7 +345,7 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
                 }
             }
         }
-        add_var(var_name, value_name);
+        add_var(var_name, value_name, instance_name);
     }
 
     return res;
