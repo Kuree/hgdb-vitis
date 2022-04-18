@@ -17,9 +17,8 @@ class DesignInfo:
         self.__parse_design_xml()
         self.__parse_llvm_bc()
         self.__parse_state_transition(self.top_name)
-        self.__parse_signal_names(self.top_name)
-        self.__parse_debug_bc()
         self.__parse_rtl()
+        self.__parse_debug_bc()
 
     def __parse_design_xml(self):
         xml_files = list(pathlib.Path(self.__solution).rglob("*.design.xml"))
@@ -82,46 +81,12 @@ class DesignInfo:
     def __get_lines(module_filename):
         assert os.path.exists(module_filename), "Unable to find file " + module_filename
         with open(module_filename, "r") as f:
-            rpt_lines = f.readlines()
-        return rpt_lines
-
-    def __get_report_lines(self, module_name):
-        rpt_path = os.path.join(self.__solution, ".autopilot", "db", module_name + ".verbose.rpt")
-        return self.__get_lines(rpt_path)
+            lines = f.readlines()
+        return lines
 
     def __get_xrf_lines(self, module_name):
         xrf_filename = os.path.join(self.__solution, ".debug", module_name + ".xrf")
         return self.__get_lines(xrf_filename)
-
-    def __parse_signal_names(self, module_name):
-        # this is similar to the state transition since they're in the same file
-        instances = self.__context[module_name].instances
-        for m in instances.values():
-            # recursively parse it
-            self.__parse_signal_names(m.module_name)
-
-        module_signals = {}
-        rpt_lines = self.__get_report_lines(module_name)
-        register_mode = 0
-        for line in rpt_lines:
-            line = line.strip()
-            if register_mode == 0:
-                if line == "* Register:":
-                    register_mode += 1
-            elif register_mode <= 3:
-                register_mode += 1
-            elif register_mode == 4:
-                if line[0] == '+':
-                    # we're done
-                    break
-                tokens = list(filter(lambda x: x, line.split("|")))
-                assert len(tokens) == 5, "Invalid register line " + line
-                name = tokens[0].strip()
-                width = int(tokens[3].strip())
-                signal = vitis.SignalInfo(name, width)
-                module_signals[name] = signal
-
-        self.__context[module_name].signals = module_signals
 
     def __parse_state_transition(self, module_name):
         # we need to parse state transition for every module since they are independent

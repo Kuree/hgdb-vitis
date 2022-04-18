@@ -169,7 +169,7 @@ public:
 };
 
 struct RTLInfo {
-    std::unordered_map<std::string, std::unordered_set<std::string>> signals;
+    std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> signals;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> instances;
 };
 
@@ -199,7 +199,7 @@ public:
     // we do this because the RTL info is defined in a different module with different CXX
     // ABI string
     void set_rtl_info(
-        const std::unordered_map<std::string, std::unordered_set<std::string>> &signals,
+        const std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> &signals,
         const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>
             &instances);
 

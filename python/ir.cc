@@ -618,7 +618,7 @@ Scope *Scope::copy() const {
     auto *new_scope = context->add_scope<Scope>(nullptr);
     *new_scope = *this;
     new_scope->scopes.clear();
-    for (auto const *s: scopes) {
+    for (auto const *s : scopes) {
         auto *new_s = s->copy();
         new_scope->add_scope(new_s);
     }
@@ -672,15 +672,21 @@ bool Context::has_module(const std::string &name) {
 }
 
 void Context::set_rtl_info(
-    const std::unordered_map<std::string, std::unordered_set<std::string>> &signals,
+    const std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> &signals,
     const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>
         &instances) {
     info_.signals = signals;
     info_.instances = instances;
+    for (auto const &[module_name, ss] : signals) {
+        if (module_infos_.find(module_name) == module_infos_.end()) continue;
+        auto &info = module_infos_.at(module_name);
+        for (auto const &[name, width] : ss) {
+            info->signals.emplace(name, SignalInfo(name, width));
+        }
+    }
 }
 
-void StateInfo::add_instruction(const std::string &filename,
-                                uint32_t line) {
+void StateInfo::add_instruction(const std::string &filename, uint32_t line) {
     LineInfo info{filename, line};
     instructions.emplace_back(info);
 }

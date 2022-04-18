@@ -17,14 +17,14 @@
 namespace py = pybind11;
 
 struct RTLInfo {
-    std::unordered_map<std::string, std::unordered_set<std::string>> signals;
+    std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> signals;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> instances;
 };
 
 class VisitSignals : public slang::ASTVisitor<VisitSignals, true, true> {
 public:
     explicit VisitSignals(
-        std::unordered_map<std::string, std::unordered_set<std::string>> &signals,
+        std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> &signals,
         std::unordered_map<std::string, std::unordered_map<std::string, std::string>> &instances,
         const slang::InstanceSymbol *inst)
         : current_module_name(std::string(inst->getDefinition().name)),
@@ -45,18 +45,20 @@ public:
 
     [[maybe_unused]] void handle(const slang::NetSymbol &sym) {
         auto name = std::string(sym.name);
-        signals_[current_module_name].emplace(name);
+        uint32_t width = sym.getType().getBitWidth();
+        signals_[current_module_name].emplace(name, width);
     }
 
     [[maybe_unused]] void handle(const slang::VariableSymbol &sym) {
         auto name = std::string(sym.name);
-        signals_[current_module_name].emplace(name);
+        uint32_t width = sym.getType().getBitWidth();
+        signals_[current_module_name].emplace(name, width);
     }
 
     std::string current_module_name;
 
 private:
-    std::unordered_map<std::string, std::unordered_set<std::string>> &signals_;
+    std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> &signals_;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> &instances_;
 };
 
