@@ -388,6 +388,10 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
         }
     }
 
+    // Notice that we need to add support for parent reference
+    // e.g., allow variable reference to escape parent scopes
+    // this is required to implement memories that gets pulled out of the target
+    // module
     return {};
 }
 
