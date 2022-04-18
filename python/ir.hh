@@ -47,17 +47,16 @@ struct Variable {
 };
 
 struct StateInfo {
-    uint32_t id;
+    std::string name;
     struct LineInfo {
         std::string filename;
         uint32_t line;
     };
-    std::vector<std::pair<std::string, LineInfo>> instructions;
+    std::vector<LineInfo> instructions;
 
-    explicit StateInfo(uint32_t id) : id(id) {}
+    explicit StateInfo(std::string name) : name(std::move(name)) {}
 
-    void add_instruction(const std::string &instr, const std::string &filename, uint32_t line);
-    void add_instruction(const std::string &instr);
+    void add_instruction(const std::string &filename, uint32_t line);
 };
 
 struct SignalInfo {
@@ -81,7 +80,8 @@ struct ModuleInfo {
 
     llvm::Function *function = nullptr;
 
-    std::map<uint32_t, StateInfo> state_infos;
+    // we assume that the xrf files contain the signals that used for controlling the states
+    std::map<std::string, StateInfo> state_infos;
     std::map<std::string, SignalInfo> signals;
 
     std::map<std::string, std::shared_ptr<ModuleInfo>> instances;
@@ -106,7 +106,7 @@ public:
     uint32_t line = 0;
 
     // one single line can have multiple ids
-    std::vector<uint32_t> state_ids;
+    std::vector<std::string> state_ids;
     const llvm::Instruction *instruction = nullptr;
     // used to indicating scoping changes (moved up)
     std::string instance_prefix;
@@ -131,7 +131,6 @@ public:
 
     [[nodiscard]] std::string get_filename() const;
     [[nodiscard]] std::string get_raw_filename() const;
-    [[nodiscard]] std::string get_instr_string() const;
 
     [[nodiscard]] virtual Scope *copy() const;
 
@@ -215,11 +214,6 @@ private:
 };
 
 Scope *get_debug_scope(const llvm::Function *function, Context &context, ModuleInfo *module);
-
-// create new state info since Python doesn't work well with pass by reference via pybind
-std::map<uint32_t, StateInfo> merge_states(const std::map<uint32_t, StateInfo> &state_infos,
-                                           const std::map<std::string, SignalInfo> &signals,
-                                           const std::string &module_name);
 
 std::map<std::string, Scope *> reorganize_scopes(
     const llvm::Module *module,

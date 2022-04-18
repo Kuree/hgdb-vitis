@@ -480,10 +480,9 @@ std::string Scope::serialize(const SerializationOptions &options) const {
         ss << R"(,"condition":")";
         // we hardcode the idle here
         auto idle = instance_prefix + "ap_idle";
-        auto fsm = instance_prefix + "ap_CS_fsm";
         ss << "(!" << idle << ")&&(";
         for (auto i = 0u; i < state_ids.size(); i++) {
-            ss << "(" << fsm << "[" << (state_ids[i] - 1) << "])";
+            ss << instance_prefix << state_ids[i];
             if (i != (state_ids.size() - 1)) {
                 ss << "||";
             }
@@ -515,7 +514,7 @@ void Scope::find_all(const std::function<bool(Scope *)> &predicate, std::vector<
 void Scope::bind_state(ModuleInfo &mod) {
     mod.root_scope = this;
     set_module(&mod);
-    const std::map<uint32_t, StateInfo> &state_infos = mod.state_infos;
+    const std::map<std::string, StateInfo> &state_infos = mod.state_infos;
     // we bind state to scope
     // if the state info has line number, we use that for matching
     // if not, we brute-force to match the instruction string
@@ -528,8 +527,7 @@ void Scope::bind_state(ModuleInfo &mod) {
         find_all(
             [&info](Scope *scope) {
                 return std::any_of(
-                    info.instructions.begin(), info.instructions.end(), [scope](auto const &iter) {
-                        auto const &loc = iter.second;
+                    info.instructions.begin(), info.instructions.end(), [scope](auto const &loc) {
                         return loc.line > 0 && loc.filename == scope->get_raw_filename() &&
                                loc.line == scope->line;
                     });
@@ -537,22 +535,6 @@ void Scope::bind_state(ModuleInfo &mod) {
             child_scopes);
         if (!child_scopes.empty()) {
             // found it
-            for (auto *scope : child_scopes) {
-                scope->state_ids.emplace_back(state_id);
-            }
-        } else {
-            // brute-force search instructions
-            find_all(
-                [&info](Scope *scope) {
-                    return std::any_of(info.instructions.begin(), info.instructions.end(),
-                                       [scope](auto const &iter) {
-                                           auto const &instr = iter.first;
-                                           auto const scope_instr = scope->get_instr_string();
-                                           return instr == scope_instr;
-                                       });
-                },
-                child_scopes);
-
             for (auto *scope : child_scopes) {
                 scope->state_ids.emplace_back(state_id);
             }
@@ -632,14 +614,6 @@ std::string Scope::get_raw_filename() const {
     }
 }
 
-[[nodiscard]] std::string Scope::get_instr_string() const {
-    if (!instruction) return "";
-    std::string buffer;
-    llvm::raw_string_ostream stream(buffer);
-    instruction->print(stream);
-    return buffer;
-}
-
 Scope *Scope::copy() const {
     auto *new_scope = context->add_scope<Scope>(parent_scope);
     *new_scope = *this;
@@ -700,48 +674,14 @@ void Context::set_rtl_info(
     info_.instances = instances;
 }
 
-void StateInfo::add_instruction(const std::string &instr, const std::string &filename,
+void StateInfo::add_instruction(const std::string &filename,
                                 uint32_t line) {
     LineInfo info{filename, line};
-    instructions.emplace_back(std::make_pair(instr, info));
+    instructions.emplace_back(info);
 }
-
-void StateInfo::add_instruction(const std::string &instr) { add_instruction(instr, "", 0); }
 
 void SerializationOptions::add_mapping(const std::string &before, std::string &after) {
     remap_filename.emplace(before, after);
-}
-
-std::map<uint32_t, StateInfo> merge_states(const std::map<uint32_t, StateInfo> &state_infos,
-                                           const std::map<std::string, SignalInfo> &signals,
-                                           const std::string &module_name) {
-    // notice that if the statement variable is only 1-bit, it means all the states are merged
-    // into one. Currently, we only support wither many to one mapping, or one-to-one mapping.
-    constexpr auto fsm_signal_name = "ap_CS_fsm";
-    if (signals.find(fsm_signal_name) == signals.end()) {
-        // no states found
-        std::cerr << "[Warning] no states found for " << module_name << std::endl;
-        return {};
-    }
-
-    auto num_states = signals.at(fsm_signal_name).width;
-    if (num_states != state_infos.size()) {
-        if (num_states == 1) {
-            // merge states
-            StateInfo new_state(1);
-            std::cout << "[Info] Merging states for " << module_name << " (" << state_infos.size()
-                      << " -> 1)" << std::endl;
-            for (auto const &[_, state] : state_infos) {
-                new_state.instructions.insert(new_state.instructions.end(),
-                                              state.instructions.begin(), state.instructions.end());
-            }
-            // starts from 1
-            return {{1, new_state}};
-        }
-        throw std::runtime_error("Mismatch state information not implemented");
-    }
-    // no need to merge
-    return state_infos;
 }
 
 void merge_scope(Scope *parent, Scope *child) {

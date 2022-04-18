@@ -50,10 +50,8 @@ void bind_scope(py::module &m) {
         .def_readwrite("top_name", &Context::top_name);
 
     py::class_<StateInfo>(m, "StateInfo")
-        .def(py::init<uint32_t>())
-        .def("add_instr", py::overload_cast<const std::string &>(&StateInfo::add_instruction))
-        .def("add_instr", py::overload_cast<const std::string &, const std::string &, uint32_t>(
-                              &StateInfo::add_instruction));
+        .def(py::init<std::string>())
+        .def("add_instr", &StateInfo::add_instruction);
 
     py::class_<SerializationOptions>(m, "SerializationOptions")
         .def(py::init<>())
@@ -63,8 +61,6 @@ void bind_scope(py::module &m) {
         .def(py::init<std::string, uint32_t>())
         .def_readonly("name", &SignalInfo::name)
         .def_readonly("width", &SignalInfo::width);
-
-    m.def("merge_states", &merge_states);
 
     py::class_<ModuleInfo, std::shared_ptr<ModuleInfo>>(m, "ModuleInfo")
         .def(py::init<std::string>())

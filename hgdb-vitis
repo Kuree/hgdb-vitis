@@ -18,7 +18,6 @@ class DesignInfo:
         self.__parse_llvm_bc()
         self.__parse_state_transition(self.top_name)
         self.__parse_signal_names(self.top_name)
-        self.__merge_module_states(self.top_name)
         self.__parse_debug_bc()
         self.__parse_rtl()
 
@@ -79,12 +78,20 @@ class DesignInfo:
             self.__context[module_name].function = func
         self.__context[self.top_name].function = top_function
 
-    def __get_report_lines(self, module_name):
-        rpt_path = os.path.join(self.__solution, ".autopilot", "db", module_name + ".verbose.rpt")
-        assert os.path.exists(rpt_path), "Unable to find verbose report " + rpt_path
-        with open(rpt_path, "r") as f:
+    @staticmethod
+    def __get_lines(module_filename):
+        assert os.path.exists(module_filename), "Unable to find file " + module_filename
+        with open(module_filename, "r") as f:
             rpt_lines = f.readlines()
         return rpt_lines
+
+    def __get_report_lines(self, module_name):
+        rpt_path = os.path.join(self.__solution, ".autopilot", "db", module_name + ".verbose.rpt")
+        return self.__get_lines(rpt_path)
+
+    def __get_xrf_lines(self, module_name):
+        xrf_filename = os.path.join(self.__solution, ".debug", module_name + ".xrf")
+        return self.__get_lines(xrf_filename)
 
     def __parse_signal_names(self, module_name):
         # this is similar to the state transition since they're in the same file
@@ -126,41 +133,22 @@ class DesignInfo:
             self.__parse_state_transition(m.module_name)
 
         module_state_info = {}
-        rpt_lines = self.__get_report_lines(module_name)
-        for i, line in enumerate(rpt_lines):
-            if line.strip() == "* FSM state operations:":
-                rpt_lines = rpt_lines[i + 1:]
-                break
-        for i, line in enumerate(rpt_lines):
-            line = line.strip()
-            if line and line[0] == "=":
-                rpt_lines = rpt_lines[:i]
-                break
         current_state = None
-        state_num_re = re.compile(r"State(?P<id>\s\d+)")
-        state_instr_re = re.compile(
-            r"ST_\d+\s+:\s+[\w\s\[\]()/\.]+--->\s+\"(?P<instr>[\w%_\s=@\.,]+)\"\s+(\[(?P<debug>.*)])?\s+--->")
+        rpt_lines = self.__get_xrf_lines(module_name)
+        state_header_re = re.compile(r"RTL state condition: \(1'b1 == (?P<name>[\w_\d]+)\)")
+        state_loc_re = re.compile(r"'\s<(?P<file>.*):(?P<line>\d+)>")
         for line in rpt_lines:
-            m = state_num_re.search(line)
+            m = state_header_re.search(line)
             if m is not None:
-                state_id = m.group("id")
-                if state_id:
-                    state_id = int(state_id)
-                    current_state = vitis.StateInfo(state_id)
-                    module_state_info[state_id] = current_state
-                    continue
+                state_name = m.group("name")
+                current_state = vitis.StateInfo(state_name)
+                module_state_info[state_name] = current_state
             else:
-                m = state_instr_re.search(line)
+                m = state_loc_re.search(line)
                 if m is not None:
-                    instr = m.group("instr")
-                    debug = m.group("debug")
-                    if debug is not None:
-                        line_idx = debug.rindex(":")
-                        filename = debug[:line_idx]
-                        line_num = int(debug[line_idx + 1:])
-                        current_state.add_instr(instr, filename, line_num)
-                    else:
-                        current_state.add_instr(instr)
+                    file = m.group("file")
+                    line = int(m.group("line"))
+                    current_state.add_instr(file, line)
 
         self.__context[module_name].state_infos = module_state_info
 
@@ -172,15 +160,6 @@ class DesignInfo:
         files = [str(f) for f in files]
         self.__rtl_info = vitis_rtl.parse_verilog(files, self.top_name)
         self.__context.set_rtl_info(self.__rtl_info.signals, self.__rtl_info.instances)
-
-    def __merge_module_states(self, module_name):
-        instances = self.__context[module_name].instances
-        for m in instances.values():
-            self.__merge_module_states(m.module_name)
-
-        signals = self.__context[module_name].signals
-        info = self.__context[module_name].state_infos
-        self.__context[module_name].state_infos = vitis.merge_states(info, signals, module_name)
 
     def dump_symbol_table(self, output, remap):
         options = vitis.SerializationOptions()
