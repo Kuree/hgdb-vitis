@@ -439,9 +439,14 @@ Scope *get_debug_scope(const llvm::Function *function, Context &context, ModuleI
                 }
             }
 
-            if (res.empty()) {
+            auto line = debug_loc.getLine();
+            // need to detect out of line declaration
+            bool out_of_line = false;
+            if (line > 0 && !res.empty()) {
+                if (res[0]->line != line) out_of_line = true;
+            }
+            if (res.empty() || out_of_line) {
                 // normal block
-                auto line = debug_loc.getLine();
                 if (line > 0 && lines.find(line) == lines.end()) {
                     auto *s = context.add_scope<Instruction>(root_scope, line);
                     lines.emplace(line);
