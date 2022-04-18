@@ -351,6 +351,46 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
     return res;
 }
 
+std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &context,
+                                      Scope *root_scope,
+                                      const std::unordered_set<std::string> &handled_vars,
+                                      const RTLInfo &rtl_info) {
+    auto *value = llvm::cast<llvm::MDNode>(call_inst.getOperand(2));
+    auto *ref_var = llvm::cast<llvm::MDNode>(call_inst.getOperand(0))->getOperand(0);
+    std::string var_name;
+    if (value) {
+        // loop to find string metadata
+        auto num_ops = value->getNumOperands();
+        for (auto i = 0u; i < num_ops; i++) {
+            auto *op = value->getOperand(i);
+            if (auto *md_str = llvm::dyn_cast<llvm::MDString>(op)) {
+                var_name = md_str->getString().str();
+                break;
+            }
+        }
+    }
+
+    if (var_name.empty()) return {};
+    if (handled_vars.find(var_name) != handled_vars.end()) return {};
+
+    // need to guess the name since there is usually no direct correspondence
+    auto const &signals = rtl_info.signals.at(root_scope->module->rtl_module_name());
+    // fuzzy search to get reg value
+    auto search_name = ref_var->getName().str() + "_reg";
+    for (auto const &[rtl_name, width] : signals) {
+        if (rtl_name.rfind(search_name, 0) == 0) {
+            // found it
+            Variable v(var_name, rtl_name);
+            auto debug_loc = call_inst.getDebugLoc();
+            uint32_t line = debug_loc.getLine();
+            auto *s = context.add_scope<DeclInstruction>(root_scope, v, line);
+            return {s};
+        }
+    }
+
+    return {};
+}
+
 Scope *get_debug_scope(const llvm::Function *function, Context &context, ModuleInfo *module) {
     if (!function) return nullptr;
     auto *root_scope = context.add_scope<Scope>(nullptr);
@@ -358,6 +398,7 @@ Scope *get_debug_scope(const llvm::Function *function, Context &context, ModuleI
     std::unordered_map<const llvm::DIScope *, Scope *> scope_mapping;
 
     std::unordered_set<uint32_t> lines;
+    std::unordered_set<std::string> handled_vars;
 
     for (auto const &blk : *function) {
         for (auto const &instr : blk) {
@@ -375,6 +416,16 @@ Scope *get_debug_scope(const llvm::Function *function, Context &context, ModuleI
                     auto name = called_function->getName();
                     if (name == "llvm.dbg.declare") {
                         res = process_var_decl(call_inst, context, root_scope, context.rtl_info());
+                    } else if (name == "llvm.dbg.value") {
+                        // notice that value may have been handled already
+                        res = process_var_decl(call_inst, context, root_scope, handled_vars,
+                                               context.rtl_info());
+                    }
+                }
+                for (auto const *v : res) {
+                    if (v->type() == "decl") {
+                        auto *decl = reinterpret_cast<const DeclInstruction *>(v);
+                        handled_vars.emplace(decl->var.name);
                     }
                 }
             }
