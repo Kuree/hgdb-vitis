@@ -804,11 +804,11 @@ void merge_scopes(const std::map<std::string, std::vector<Scope *>> &scopes) {
 
         if (contained) {
             // now merge everything into parent
-            // create a new scope for this function
-            auto *target_parent = parent->context->add_scope<Scope>(parent);
-            target_parent->module = parent->module;
             for (auto *s : ss) {
                 if (s != parent) {
+                    // create a new scope for this function
+                    auto *target_parent = parent->context->add_scope<Scope>(parent);
+                    target_parent->module = parent->module;
                     merge_scope(target_parent, s);
                 }
             }
