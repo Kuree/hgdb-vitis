@@ -541,10 +541,11 @@ std::string Scope::serialize(const SerializationOptions &options) const {
     if (!member.empty()) {
         ss << "," << member;
     }
+
+    ss << R"(,"condition":")";
+    auto idle = instance_prefix + "ap_idle";
     if (!state_ids.empty()) {
-        ss << R"(,"condition":")";
         // we hardcode the idle here
-        auto idle = instance_prefix + "ap_idle";
         ss << "(!" << idle << ")&&(";
         for (auto i = 0u; i < state_ids.size(); i++) {
             ss << instance_prefix << state_ids[i];
@@ -553,6 +554,9 @@ std::string Scope::serialize(const SerializationOptions &options) const {
             }
         }
         ss << ')' << '"';
+    } else {
+        //
+        ss << '!' << idle << '"';
     }
     ss << "}";
     return ss.str();
