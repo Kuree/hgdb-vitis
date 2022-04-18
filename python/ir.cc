@@ -358,14 +358,19 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
     auto *value = llvm::cast<llvm::MDNode>(call_inst.getOperand(2));
     auto *ref_var = llvm::cast<llvm::MDNode>(call_inst.getOperand(0))->getOperand(0);
     std::string var_name;
+    uint32_t line_num = 0;
     if (value) {
         // loop to find string metadata
         auto num_ops = value->getNumOperands();
         for (auto i = 0u; i < num_ops; i++) {
             auto *op = value->getOperand(i);
+            if (!op) continue;
             if (auto *md_str = llvm::dyn_cast<llvm::MDString>(op)) {
                 var_name = md_str->getString().str();
-                break;
+            } else if (i > 0 && line_num == 0) {
+                if (auto *md_int = llvm::dyn_cast<llvm::ConstantInt>(op)) {
+                    line_num = md_int->getLimitedValue();
+                }
             }
         }
     }
@@ -382,7 +387,7 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
             // found it
             Variable v(var_name, rtl_name);
             auto debug_loc = call_inst.getDebugLoc();
-            uint32_t line = debug_loc.getLine();
+            uint32_t line = line_num == 0 ? debug_loc.getLine() : line_num;
             auto *s = context.add_scope<DeclInstruction>(root_scope, v, line);
             return {s};
         }
