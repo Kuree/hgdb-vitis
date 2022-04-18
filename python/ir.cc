@@ -615,8 +615,13 @@ std::string Scope::get_raw_filename() const {
 }
 
 Scope *Scope::copy() const {
-    auto *new_scope = context->add_scope<Scope>(parent_scope);
+    auto *new_scope = context->add_scope<Scope>(nullptr);
     *new_scope = *this;
+    new_scope->scopes.clear();
+    for (auto const *s: scopes) {
+        auto *new_s = s->copy();
+        new_scope->add_scope(new_s);
+    }
     return new_scope;
 }
 
@@ -631,7 +636,7 @@ void Scope::set_module(ModuleInfo *mod) {
 std::string Instruction::serialize_member() const { return R"("line":)" + std::to_string(line); }
 
 Scope *Instruction::copy() const {
-    auto *new_scope = context->add_scope<Instruction>(parent_scope, line);
+    auto *new_scope = context->add_scope<Instruction>(nullptr, line);
     *new_scope = *this;
     return new_scope;
 }
@@ -645,7 +650,7 @@ std::string DeclInstruction::serialize_member() const {
 }
 
 Scope *DeclInstruction::copy() const {
-    auto *new_scope = context->add_scope<DeclInstruction>(parent_scope, var, line);
+    auto *new_scope = context->add_scope<DeclInstruction>(nullptr, var, line);
     *new_scope = *this;
     return new_scope;
 }
