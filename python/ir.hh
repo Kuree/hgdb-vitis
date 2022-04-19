@@ -171,7 +171,7 @@ public:
 struct RTLInfo {
     std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> signals;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> instances;
-    std::unordered_map<std::string, std::set<std::pair<std::string, std::string>>> connections;
+    std::unordered_map<std::string, std::vector<std::tuple<std::string, std::string, std::string, std::string>>> connections;
 };
 
 class Context {
@@ -203,7 +203,7 @@ public:
         const std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> &signals,
         const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>
             &instances,
-        const std::unordered_map<std::string, std::set<std::pair<std::string, std::string>>>
+        const std::unordered_map<std::string, std::vector<std::tuple<std::string, std::string, std::string, std::string>>>
             &connections);
 
     inline RTLInfo &rtl_info() { return info_; }

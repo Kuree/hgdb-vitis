@@ -19,7 +19,9 @@ namespace py = pybind11;
 struct RTLInfo {
     std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> signals;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> instances;
-    std::unordered_map<std::string, std::set<std::pair<std::string, std::string>>> connections;
+    std::unordered_map<std::string,
+                       std::vector<std::tuple<std::string, std::string, std::string, std::string>>>
+        connections;
 };
 
 class VisitSignals : public slang::ASTVisitor<VisitSignals, true, true> {
@@ -27,7 +29,10 @@ public:
     VisitSignals(
         std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> &signals,
         std::unordered_map<std::string, std::unordered_map<std::string, std::string>> &instances,
-        std::unordered_map<std::string, std::set<std::pair<std::string, std::string>>> &connections,
+        std::unordered_map<
+            std::string,
+            std::vector<std::tuple<std::string, std::string, std::string, std::string>>>
+            &connections,
         const slang::InstanceSymbol *inst)
         : current_module_name(std::string(inst->getDefinition().name)),
           signals_(signals),
@@ -53,6 +58,8 @@ public:
         auto name = std::string(sym.name);
         uint32_t width = sym.getType().getBitWidth();
         signals_[current_module_name].emplace(name, width);
+
+        // check if the net is used for direct connection between two instances
     }
 
     [[maybe_unused]] void handle(const slang::VariableSymbol &sym) {
@@ -66,46 +73,66 @@ public:
 private:
     std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> &signals_;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> &instances_;
-    std::unordered_map<std::string, std::set<std::pair<std::string, std::string>>> &connections_;
+    std::unordered_map<std::string,
+                       std::vector<std::tuple<std::string, std::string, std::string, std::string>>>
+        &connections_;
 
     class SymbolCollector : public slang::ASTVisitor<SymbolCollector, true, true> {
     public:
-        explicit SymbolCollector(std::string target_name) : target_name_(std::move(target_name)) {}
+        void handle(const slang::NamedValueExpression &expr) { symbols.emplace(&expr.symbol); }
+        void handle(const slang::NetSymbol &net) { symbols.emplace(&net); }
+        std::unordered_set<const slang::ValueSymbol *> symbols;
+    };
 
-        void handle(const slang::NamedValueExpression &expr) {
-            auto name = expr.symbol.name;
-            if (name != target_name_ && port_name.empty()) {
-                port_name = std::string(name);
+    class PortConnectionCollector : public slang::ASTVisitor<PortConnectionCollector, true, false> {
+    public:
+        void handle(const slang::InstanceSymbol &instance) {
+            if (!is_top_) {
+                is_top_ = true;
+                visitDefault(instance);
+                return;
             }
+            instance.forEachPortConnection([this, &instance](const slang::PortConnection &conn) {
+                auto const *expr = conn.getExpression();
+                if (!expr) return;
+                SymbolCollector c;
+                expr->visit(c);
+                for (auto const &s : c.symbols) {
+                    // we focus on multi-bit data path for now to reduce complexity
+                    auto width = s->getType().getBitWidth();
+                    if (width <= 1) continue;
+                    connections[s].emplace(&instance);
+                }
+            });
         }
-        std::string port_name;
+
+        std::unordered_map<const slang::ValueSymbol *,
+                           std::unordered_set<const slang::InstanceSymbol *>>
+            connections;
 
     private:
-        std::string target_name_;
+        bool is_top_ = false;
     };
 
     void compute_connection(const slang::InstanceSymbol &sym) {
         auto def_name = std::string(sym.getDefinition().name);
-        auto *parent = sym.getParentScope();
-        if (!parent) return;
-        auto const &parent_symbol = parent->asSymbol();
-        if (parent_symbol.kind != slang::SymbolKind::InstanceBody) return;
-        auto parent_name =
-            std::string(parent_symbol.as<slang::InstanceBodySymbol>().getDefinition().name);
+        if (connections_.find(def_name) != connections_.end()) return;
+        PortConnectionCollector c;
+        sym.visit(c);
 
-        sym.forEachPortConnection(
-            [this, &def_name, &parent_name](const slang::PortConnection &conn) {
-                auto const port = std::string(conn.port.name);
-                auto const *expr = conn.getExpression();
-                if (!expr) return;
-                // we only deal with named value expression
-                auto entry = def_name + "." + port;
-                SymbolCollector collector(port);
-                expr->visit(collector);
-                auto port_name = collector.port_name;
-                if (!port_name.empty())
-                    connections_[entry].emplace(std::make_pair(parent_name, port_name));
-            });
+        for (auto const &[_, instances] : c.connections) {
+            auto ins = std::vector(instances.begin(), instances.end());
+            for (auto i = 0; i < (ins.size() - 1); i++) {
+                auto const *inst1 = ins[i];
+                for (auto j = i + 1; j < ins.size(); j++) {
+                    auto const *inst2 = ins[j];
+                    auto entry = std::make_tuple(
+                        std::string(inst1->name), std::string(inst1->getDefinition().name),
+                        std::string(inst2->name), std::string(inst2->getDefinition().name));
+                    connections_[def_name].emplace_back(entry);
+                }
+            }
+        }
     }
 };
 

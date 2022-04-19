@@ -395,20 +395,39 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
     }
 
     // Brute-force search to see if there is a parent that holds the memory reference
-    auto mem_instance = ref_var->getName().str() + "_U";
+    std::string mem_instance;
     // find parent instance, if any
     bool found = false;
+    auto root_module_name = root_scope->module->rtl_module_name();
     for (auto const &[mod_name, children] : rtl_info.instances) {
         if (found) break;
+        if (mod_name == root_module_name) continue;
         for (auto const &[inst_name, def_name] : children) {
-            if (def_name != root_scope->module->rtl_module_name()) continue;
-            if (children.find(mem_instance) != children.end()) {
-                auto const &mem_signals = rtl_info.signals.at(children.at(mem_instance));
-                if (mem_signals.find("ram") != mem_signals.end()) {
-                    found = true;
+            if (def_name != root_module_name) continue;
+            // trying to figure out the connection
+            if (rtl_info.connections.find(mod_name) == rtl_info.connections.end()) continue;
+            auto const &conn_info = rtl_info.connections.at(mod_name);
+            for (auto const &info : conn_info) {
+                auto def1 = std::get<1>(info);
+                auto def2 = std::get<3>(info);
+                std::string mem_def_name;
+                if (def1 == root_module_name) {
+                    mem_instance = std::get<2>(info);
+                    mem_def_name = def2;
+                } else if (def2 == root_module_name) {
+                    mem_instance = std::get<0>(info);
+                    mem_def_name = def1;
                 }
+                if (!mem_def_name.empty() && rtl_info.signals.find(mem_def_name) != rtl_info.signals.end()) {
+                    auto const &ss = rtl_info.signals.at(mem_def_name);
+                    if (ss.find("ram") != ss.end()) {
+                        // found it
+                        found = true;
+                        break;
+                    }
+                }
+
             }
-            break;
         }
     }
 
@@ -764,7 +783,8 @@ bool Context::has_module(const std::string &name) {
 void Context::set_rtl_info(
     const std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> &signals,
     const std::unordered_map<std::string, std::unordered_map<std::string, std::string>> &instances,
-    const std::unordered_map<std::string, std::set<std::pair<std::string, std::string>>>
+    const std::unordered_map<
+        std::string, std::vector<std::tuple<std::string, std::string, std::string, std::string>>>
         &connections) {
     info_.signals = signals;
     info_.instances = instances;
