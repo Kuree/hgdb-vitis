@@ -378,6 +378,9 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
     if (var_name.empty()) return {};
     if (handled_vars.find(var_name) != handled_vars.end()) return {};
 
+    auto debug_loc = call_inst.getDebugLoc();
+    uint32_t line = line_num == 0 ? debug_loc.getLine() : line_num;
+
     // need to guess the name since there is usually no direct correspondence
     auto const &signals = rtl_info.signals.at(root_scope->module->rtl_module_name());
     // fuzzy search to get reg value
@@ -386,17 +389,36 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
         if (rtl_name.rfind(search_name, 0) == 0) {
             // found it
             Variable v(var_name, rtl_name);
-            auto debug_loc = call_inst.getDebugLoc();
-            uint32_t line = line_num == 0 ? debug_loc.getLine() : line_num;
             auto *s = context.add_scope<DeclInstruction>(root_scope, v, line);
             return {s};
         }
     }
 
-    // Notice that we need to add support for parent reference
-    // e.g., allow variable reference to escape parent scopes
-    // this is required to implement memories that gets pulled out of the target
-    // module
+    // Brute-force search to see if there is a parent that holds the memory reference
+    auto mem_instance = ref_var->getName().str() + "_U";
+    // find parent instance, if any
+    bool found = false;
+    for (auto const &[mod_name, children]: rtl_info.instances) {
+        if (found) break;
+        for (auto const &[inst_name, def_name]: children) {
+            if (def_name != root_scope->module->rtl_module_name()) continue;
+            if (children.find(mem_instance) != children.end()) {
+                auto const &mem_signals = rtl_info.signals.at(children.at(mem_instance));
+                if (mem_signals.find("ram") != mem_signals.end()) {
+                    found = true;
+                }
+            }
+            break;
+        }
+    }
+
+    if (found) {
+        // use $parent to escape
+        auto rtl_name = "$parent." + mem_instance + ".ram";
+        Variable v(var_name, rtl_name);
+        auto *s = context.add_scope<DeclInstruction>(root_scope, v, line);
+        return {s};
+    }
     return {};
 }
 
