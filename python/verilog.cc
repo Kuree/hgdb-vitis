@@ -19,23 +19,29 @@ namespace py = pybind11;
 struct RTLInfo {
     std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> signals;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> instances;
+    std::unordered_map<std::string, std::set<std::pair<std::string, std::string>>> connections;
 };
 
 class VisitSignals : public slang::ASTVisitor<VisitSignals, true, true> {
 public:
-    explicit VisitSignals(
+    VisitSignals(
         std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> &signals,
         std::unordered_map<std::string, std::unordered_map<std::string, std::string>> &instances,
+        std::unordered_map<std::string, std::set<std::pair<std::string, std::string>>> &connections,
         const slang::InstanceSymbol *inst)
         : current_module_name(std::string(inst->getDefinition().name)),
           signals_(signals),
-          instances_(instances) {}
+          instances_(instances),
+          connections_(connections) {}
 
     [[maybe_unused]] void handle(const slang::InstanceSymbol &sym) {
         auto def_name = std::string(sym.getDefinition().name);
         if (instances_.find(def_name) != instances_.end()) return;
         auto inst_name = std::string(sym.name);
         instances_[current_module_name].emplace(inst_name, def_name);
+
+        // store the port connections as well
+        compute_connection(sym);
 
         auto temp = current_module_name;
         current_module_name = def_name;
@@ -60,6 +66,47 @@ public:
 private:
     std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> &signals_;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> &instances_;
+    std::unordered_map<std::string, std::set<std::pair<std::string, std::string>>> &connections_;
+
+    class SymbolCollector : public slang::ASTVisitor<SymbolCollector, true, true> {
+    public:
+        explicit SymbolCollector(std::string target_name) : target_name_(std::move(target_name)) {}
+
+        void handle(const slang::NamedValueExpression &expr) {
+            auto name = expr.symbol.name;
+            if (name != target_name_ && port_name.empty()) {
+                port_name = std::string(name);
+            }
+        }
+        std::string port_name;
+
+    private:
+        std::string target_name_;
+    };
+
+    void compute_connection(const slang::InstanceSymbol &sym) {
+        auto def_name = std::string(sym.getDefinition().name);
+        auto *parent = sym.getParentScope();
+        if (!parent) return;
+        auto const &parent_symbol = parent->asSymbol();
+        if (parent_symbol.kind != slang::SymbolKind::InstanceBody) return;
+        auto parent_name =
+            std::string(parent_symbol.as<slang::InstanceBodySymbol>().getDefinition().name);
+
+        sym.forEachPortConnection(
+            [this, &def_name, &parent_name](const slang::PortConnection &conn) {
+                auto const port = std::string(conn.port.name);
+                auto const *expr = conn.getExpression();
+                if (!expr) return;
+                // we only deal with named value expression
+                auto entry = def_name + "." + port;
+                SymbolCollector collector(port);
+                expr->visit(collector);
+                auto port_name = collector.port_name;
+                if (!port_name.empty())
+                    connections_[entry].emplace(std::make_pair(parent_name, port_name));
+            });
+    }
 };
 
 std::unique_ptr<RTLInfo> parse_verilog(const std::vector<std::string> &files,
@@ -106,7 +153,7 @@ std::unique_ptr<RTLInfo> parse_verilog(const std::vector<std::string> &files,
     }
 
     auto res = std::make_unique<RTLInfo>();
-    VisitSignals vis(res->signals, res->instances, top);
+    VisitSignals vis(res->signals, res->instances, res->connections, top);
     top->visit(vis);
 
     return res;
@@ -115,6 +162,7 @@ std::unique_ptr<RTLInfo> parse_verilog(const std::vector<std::string> &files,
 PYBIND11_MODULE(vitis_rtl, m) {
     py::class_<RTLInfo>(m, "RTLInfo")
         .def_readonly("signals", &RTLInfo::signals)
-        .def_readonly("instances", &RTLInfo::instances);
+        .def_readonly("instances", &RTLInfo::instances)
+        .def_readonly("connections", &RTLInfo::connections);
     m.def("parse_verilog", &parse_verilog);
 }
