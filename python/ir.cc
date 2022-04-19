@@ -398,9 +398,9 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
     auto mem_instance = ref_var->getName().str() + "_U";
     // find parent instance, if any
     bool found = false;
-    for (auto const &[mod_name, children]: rtl_info.instances) {
+    for (auto const &[mod_name, children] : rtl_info.instances) {
         if (found) break;
-        for (auto const &[inst_name, def_name]: children) {
+        for (auto const &[inst_name, def_name] : children) {
             if (def_name != root_scope->module->rtl_module_name()) continue;
             if (children.find(mem_instance) != children.end()) {
                 auto const &mem_signals = rtl_info.signals.at(children.at(mem_instance));
@@ -763,10 +763,12 @@ bool Context::has_module(const std::string &name) {
 
 void Context::set_rtl_info(
     const std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> &signals,
-    const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>
-        &instances) {
+    const std::unordered_map<std::string, std::unordered_map<std::string, std::string>> &instances,
+    const std::unordered_map<std::string, std::set<std::pair<std::string, std::string>>>
+        &connections) {
     info_.signals = signals;
     info_.instances = instances;
+    info_.connections = connections;
     for (auto const &[module_name, ss] : signals) {
         if (module_infos_.find(module_name) == module_infos_.end()) continue;
         auto &info = module_infos_.at(module_name);
