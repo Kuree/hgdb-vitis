@@ -602,7 +602,7 @@ std::string Scope::serialize(const SerializationOptions &options) const {
 
     auto idle = instance_prefix + "ap_idle";
     if (!state_ids.empty()) {
-        ss << R"(,"condition":")";
+        ss << R"(,"condition":"(!)" << idle << ")&&(";
         // we hardcode the idle here
         for (auto i = 0u; i < state_ids.size(); i++) {
             ss << instance_prefix << state_ids[i];
@@ -610,9 +610,10 @@ std::string Scope::serialize(const SerializationOptions &options) const {
                 ss << "||";
             }
         }
-        ss << '"';
-    } else if (!parent_scope) {
-        // this is root
+        ss << ")\"";
+    } else if (type() != "block") {
+        // we flatten out the condition to avoid complications. this will increase the symbol
+        // table size
         ss << R"(,"condition":"!)" << idle << '"';
     }
     ss << "}";
@@ -740,6 +741,7 @@ std::string Scope::get_raw_filename() const {
     }
 }
 
+// NOLINTNEXTLINE
 Scope *Scope::copy() const {
     auto *new_scope = context->add_scope<Scope>(nullptr);
     *new_scope = *this;
