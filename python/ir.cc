@@ -394,50 +394,66 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
         }
     }
 
-    // Brute-force search to see if there is a parent that holds the memory reference
-    std::string mem_instance;
-    // find parent instance, if any
-    bool found = false;
-    auto root_module_name = root_scope->module->rtl_module_name();
-    for (auto const &[mod_name, children] : rtl_info.instances) {
-        if (found) break;
-        if (mod_name == root_module_name) continue;
-        for (auto const &[inst_name, def_name] : children) {
-            if (def_name != root_module_name) continue;
-            // trying to figure out the connection
-            if (rtl_info.connections.find(mod_name) == rtl_info.connections.end()) continue;
-            auto const &conn_info = rtl_info.connections.at(mod_name);
-            for (auto const &info : conn_info) {
-                auto def1 = std::get<1>(info);
-                auto def2 = std::get<3>(info);
-                std::string mem_def_name;
-                if (def1 == root_module_name) {
-                    mem_instance = std::get<2>(info);
-                    mem_def_name = def2;
-                } else if (def2 == root_module_name) {
-                    mem_instance = std::get<0>(info);
-                    mem_def_name = def1;
+    // trying to figure out if we can use the caller information
+    auto ref_var_name = ref_var->getName();
+    if (auto *call_blk = call_inst.getParent()) {
+        if (auto *func = call_blk->getParent()) {
+            uint32_t idx = 0;
+            auto const &arg_list = func->getArgumentList();
+            bool found = false;
+            for (auto const &arg : arg_list) {
+                if (arg.getName() == ref_var_name) {
+                    // found it
+                    found = true;
+                    break;
                 }
-                if (!mem_def_name.empty() && rtl_info.signals.find(mem_def_name) != rtl_info.signals.end()) {
-                    auto const &ss = rtl_info.signals.at(mem_def_name);
-                    if (ss.find("ram") != ss.end()) {
-                        // found it
-                        found = true;
+                idx++;
+            }
+            if (found) {
+                // trying to figure out the use calls
+                std::string mem_arg_name;
+                for (auto use = func->use_begin(); use != func->use_end(); use++) {
+                    if (auto *call = llvm::dyn_cast<llvm::CallInst>(*use)) {
+                        auto arg = call->getArgOperand(idx);
+                        mem_arg_name = arg->getName().str();
                         break;
                     }
                 }
+                if (!mem_arg_name.empty()) {
+                    // figure out if this signal exists
+                    // brute force to resolve the instances
+                    auto rtl_module_name = root_scope->module->rtl_module_name();
+                    auto mem_inst_name = mem_arg_name + "_U";
+                    for (auto const &[m, children] : rtl_info.instances) {
+                        bool same_level = false;
+                        std::string mem_def_name;
+                        for (auto const &[inst, def] : children) {
+                            if (def == rtl_module_name) {
+                                same_level = true;
+                            }
+                            if (inst == mem_inst_name) {
+                                mem_def_name = def;
+                            }
+                        }
 
+                        if (same_level && !mem_def_name.empty()) {
+                            if (rtl_info.signals.find(mem_def_name) != rtl_info.signals.end()) {
+                                auto const &ss = rtl_info.signals.at(mem_def_name);
+                                if (ss.find("ram") != ss.end()) {
+                                    auto rtl_name = "$parent." + mem_inst_name + ".ram";
+                                    Variable v(var_name, rtl_name);
+                                    auto *s =
+                                        context.add_scope<DeclInstruction>(root_scope, v, line);
+                                    return {s};
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
-    if (found) {
-        // use $parent to escape
-        auto rtl_name = "$parent." + mem_instance + ".ram";
-        Variable v(var_name, rtl_name);
-        auto *s = context.add_scope<DeclInstruction>(root_scope, v, line);
-        return {s};
-    }
     return {};
 }
 

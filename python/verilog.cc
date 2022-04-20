@@ -46,7 +46,7 @@ public:
         instances_[current_module_name].emplace(inst_name, def_name);
 
         // store the port connections as well
-        compute_connection(sym);
+        // compute_connection(sym);
 
         auto temp = current_module_name;
         current_module_name = def_name;
