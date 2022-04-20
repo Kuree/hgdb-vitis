@@ -221,4 +221,6 @@ std::map<std::string, Scope *> reorganize_scopes(
         &original_functions,
     std::map<std::string, Scope *> scopes);
 
+void infer_dangling_scope_state(const std::map<std::string, Scope *> &scopes);
+
 #endif  // HGDB_VITIS_IR_HH

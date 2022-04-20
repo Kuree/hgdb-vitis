@@ -72,6 +72,7 @@ void bind_scope(py::module &m) {
         .def("add_instance", &ModuleInfo::add_instance);
 
     m.def("reorganize_scopes", reorganize_scopes);
+    m.def("infer_dangling_scope_state", infer_dangling_scope_state);
 }
 
 PYBIND11_MODULE(vitis, m) {

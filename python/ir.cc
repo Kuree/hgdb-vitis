@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <queue>
 #include <stack>
 #include <unordered_set>
@@ -1019,6 +1020,60 @@ std::map<std::string, Scope *> reorganize_scopes(
     }
 
     return scopes;
+}
+
+// NOLINTNEXTLINE
+void infer_dandling_scope_state(Scope *scope) {
+    if (scope->scopes.empty()) return;
+    for (auto *s : scope->scopes) {
+        infer_dandling_scope_state(s);
+    }
+
+    bool target = true;
+    for (auto *s : scope->scopes) {
+        if (s->type() == "block") {
+            target = false;
+            break;
+        }
+    }
+    if (!target || scope->scopes.size() <= 1) return;
+    // check if there is any missing state info
+    uint64_t max_state_size = 0;
+    std::string state_id_name;
+    std::string prefix;
+    for (auto *s : scope->scopes) {
+        auto size = s->state_ids.size();
+        if (size > max_state_size) max_state_size = size;
+        if (size == 1) {
+            if (state_id_name.empty()) {
+                state_id_name = s->state_ids[0];
+                prefix = s->instance_prefix;
+            } else if (state_id_name != s->state_ids[0] || prefix != s->instance_prefix) {
+                target = false;
+                break;
+            }
+        } else if (size > 1) {
+            target = false;
+            break;
+        }
+    }
+    if (!target || max_state_size != 1) return;
+    // fixing state ids and prefix
+    for (auto *s : scope->scopes) {
+        if (s->state_ids.empty()) {
+            if (state_id_name.empty()) {
+                throw std::runtime_error("State id should not be empty when infer dangling state");
+            }
+            s->state_ids.emplace_back(state_id_name);
+            s->instance_prefix = prefix;
+        }
+    }
+}
+
+void infer_dangling_scope_state(const std::map<std::string, Scope *> &scopes) {
+    for (auto const &[name, root] : scopes) {
+        infer_dandling_scope_state(root);
+    }
 }
 
 void ModuleInfo::add_instance(const std::string &m_name, const std::string &instance_name) {
