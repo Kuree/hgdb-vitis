@@ -19,9 +19,6 @@ namespace py = pybind11;
 struct RTLInfo {
     std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> signals;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> instances;
-    std::unordered_map<std::string,
-                       std::vector<std::tuple<std::string, std::string, std::string, std::string>>>
-        connections;
 };
 
 class VisitSignals : public slang::ASTVisitor<VisitSignals, true, true> {
@@ -29,15 +26,10 @@ public:
     VisitSignals(
         std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> &signals,
         std::unordered_map<std::string, std::unordered_map<std::string, std::string>> &instances,
-        std::unordered_map<
-            std::string,
-            std::vector<std::tuple<std::string, std::string, std::string, std::string>>>
-            &connections,
         const slang::InstanceSymbol *inst)
         : current_module_name(std::string(inst->getDefinition().name)),
           signals_(signals),
-          instances_(instances),
-          connections_(connections) {}
+          instances_(instances){}
 
     [[maybe_unused]] void handle(const slang::InstanceSymbol &sym) {
         auto def_name = std::string(sym.getDefinition().name);
@@ -73,9 +65,6 @@ public:
 private:
     std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> &signals_;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> &instances_;
-    std::unordered_map<std::string,
-                       std::vector<std::tuple<std::string, std::string, std::string, std::string>>>
-        &connections_;
 
     class SymbolCollector : public slang::ASTVisitor<SymbolCollector, true, true> {
     public:
@@ -113,27 +102,6 @@ private:
     private:
         bool is_top_ = false;
     };
-
-    void compute_connection(const slang::InstanceSymbol &sym) {
-        auto def_name = std::string(sym.getDefinition().name);
-        if (connections_.find(def_name) != connections_.end()) return;
-        PortConnectionCollector c;
-        sym.visit(c);
-
-        for (auto const &[_, instances] : c.connections) {
-            auto ins = std::vector(instances.begin(), instances.end());
-            for (auto i = 0; i < (ins.size() - 1); i++) {
-                auto const *inst1 = ins[i];
-                for (auto j = i + 1; j < ins.size(); j++) {
-                    auto const *inst2 = ins[j];
-                    auto entry = std::make_tuple(
-                        std::string(inst1->name), std::string(inst1->getDefinition().name),
-                        std::string(inst2->name), std::string(inst2->getDefinition().name));
-                    connections_[def_name].emplace_back(entry);
-                }
-            }
-        }
-    }
 };
 
 std::unique_ptr<RTLInfo> parse_verilog(const std::vector<std::string> &files,
@@ -180,7 +148,7 @@ std::unique_ptr<RTLInfo> parse_verilog(const std::vector<std::string> &files,
     }
 
     auto res = std::make_unique<RTLInfo>();
-    VisitSignals vis(res->signals, res->instances, res->connections, top);
+    VisitSignals vis(res->signals, res->instances, top);
     top->visit(vis);
 
     return res;
@@ -189,7 +157,6 @@ std::unique_ptr<RTLInfo> parse_verilog(const std::vector<std::string> &files,
 PYBIND11_MODULE(vitis_rtl, m) {
     py::class_<RTLInfo>(m, "RTLInfo")
         .def_readonly("signals", &RTLInfo::signals)
-        .def_readonly("instances", &RTLInfo::instances)
-        .def_readonly("connections", &RTLInfo::connections);
+        .def_readonly("instances", &RTLInfo::instances);
     m.def("parse_verilog", &parse_verilog);
 }

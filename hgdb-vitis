@@ -124,7 +124,7 @@ class DesignInfo:
         files = list(pathlib.Path(verilog_dir).rglob("*.v"))
         files = [str(f) for f in files]
         self.__rtl_info = vitis_rtl.parse_verilog(files, self.top_name)
-        self.__context.set_rtl_info(self.__rtl_info.signals, self.__rtl_info.instances, self.__rtl_info.connections)
+        self.__context.set_rtl_info(self.__rtl_info.signals, self.__rtl_info.instances)
 
     def dump_symbol_table(self, output, remap):
         options = vitis.SerializationOptions()

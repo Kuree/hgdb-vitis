@@ -798,13 +798,10 @@ bool Context::has_module(const std::string &name) {
 
 void Context::set_rtl_info(
     const std::unordered_map<std::string, std::unordered_map<std::string, uint32_t>> &signals,
-    const std::unordered_map<std::string, std::unordered_map<std::string, std::string>> &instances,
-    const std::unordered_map<
-        std::string, std::vector<std::tuple<std::string, std::string, std::string, std::string>>>
-        &connections) {
+    const std::unordered_map<std::string, std::unordered_map<std::string, std::string>>
+        &instances) {
     info_.signals = signals;
     info_.instances = instances;
-    info_.connections = connections;
     for (auto const &[module_name, ss] : signals) {
         if (module_infos_.find(module_name) == module_infos_.end()) continue;
         auto &info = module_infos_.at(module_name);
