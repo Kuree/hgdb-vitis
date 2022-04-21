@@ -8,3 +8,6 @@ Some notes on reverse engineering the code generation process of Vitis
 6. `a.o.3.bc` is actually built with much ancient LLVM, e.g. LLVM 3.1. This is however, optimized build where basic block gets pulled out. This is the bitcode that's closest to RTL
 7. The state information in verbose.rpt does not represent the total state "properly". In pipelined cases, the number of states shown there and the one-hot encoded state variable do not match. Use `.xrf` file in `.debug` instead.
 8. llvm declared symbols are not directly generated into RTL signals. Need to follow its use to see which signals are generated.
+9. If a function is inlined but some of its basic blocks are ripped out as an individual function (separate module in RTL), then the new function args are usually carried from the caller site. In this case, we need to know the actual RTL reference from the caller since all the signals are passed in.
+10. Inputs passed in to the top functions are typically streamed in, so there won't be any memory device mapping in the RTL.
+11. In a pipelined design, loops can get unrolled and Vitis may yse dual-port memory to read/write data.
