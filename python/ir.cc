@@ -228,7 +228,8 @@ void find_array_range(const llvm::MDNode *node, std::vector<uint32_t> &res) {
 }
 
 std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &context,
-                                      Scope *root_scope, const RTLInfo &rtl_info) {
+                                      Scope *root_scope, const RTLInfo &rtl_info,
+                                      ModuleInfo *escaped_parent = nullptr) {
     auto *value = llvm::cast<llvm::MDNode>(call_inst.getOperand(0))->getOperand(0);
     auto *desc = llvm::cast<llvm::MDNode>(call_inst.getOperand(1));
     auto num_op = desc->getNumOperands();
@@ -266,7 +267,8 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
     auto add_var = [&](const std::string &front_name, std::string rtl_name,
                        const std::string &instance_name = {}) {
         // need to check legality of the signal
-        auto const module_name = root_scope->module->rtl_module_name();
+        auto const module_name = escaped_parent ? escaped_parent->rtl_module_name()
+                                                : root_scope->module->rtl_module_name();
 
         if (instance_name.empty()) {
             if (rtl_info.signals.find(module_name) == rtl_info.signals.end()) {
@@ -291,6 +293,9 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
             }
             rtl_name = instance_name + "." + rtl_name;
         }
+        if (escaped_parent) {
+            rtl_name = "$parent." + rtl_name;
+        }
         Variable var(front_name, rtl_name);
         // compute the debugging scope
         // for now we put everything in the same scope. Need to refactor this to compute
@@ -298,6 +303,8 @@ std::vector<Scope *> process_var_decl(const llvm::CallInst &call_inst, Context &
         auto debug_loc = call_inst.getDebugLoc();
         uint32_t line = debug_loc.getLine();
         if (line == 0) line = line_num;
+        // if it's inferred, i.e. parent module is set, we set line to
+        if (escaped_parent) line = 0;
         auto *s = context.add_scope<DeclInstruction>(root_scope, var, line);
         res.emplace_back(s);
         return true;
@@ -971,6 +978,9 @@ std::map<std::string, Scope *> reorganize_scopes(
 
         std::map<std::string, Scope *> mod_functions;
 
+        std::vector<Scope *> escaped_scopes;
+        std::string targeted_function_name;
+
         for (auto *child_scope : child_scopes) {
             auto filename = child_scope->get_filename();
             if (original_functions.find(filename) == original_functions.end()) {
@@ -978,6 +988,10 @@ std::map<std::string, Scope *> reorganize_scopes(
             }
             auto const &function_range = original_functions.at(filename);
             auto line = child_scope->line;
+            if (line == 0) {
+                escaped_scopes.emplace_back(child_scope);
+                continue;
+            }
             bool found = false;
             for (auto const &[func_name, line_range] : function_range) {
                 auto const [min, max] = line_range;
@@ -993,12 +1007,17 @@ std::map<std::string, Scope *> reorganize_scopes(
 
                     auto *function_scope = mod_functions.at(func_name);
                     function_scope->add_scope(child_scope);
+                    targeted_function_name = func_name;
                 }
             }
 
             if (!found) {
                 throw std::runtime_error("Unable to determine scope location");
             }
+        }
+        // just use the last one. we don't expect the split function comes from two functions
+        for (auto *s : escaped_scopes) {
+            mod_functions.at(targeted_function_name)->add_scope(s);
         }
     }
 
@@ -1075,6 +1094,58 @@ void infer_dandling_scope_state(Scope *scope) {
 void infer_dangling_scope_state(const std::map<std::string, Scope *> &scopes) {
     for (auto const &[name, root] : scopes) {
         infer_dandling_scope_state(root);
+    }
+}
+
+void infer_function_arg(const llvm::Module *module, const std::map<std::string, Scope *> &scopes) {
+    for (auto const &[func_name, root_scope] : scopes) {
+        auto *function = module->getFunction(func_name);
+        // loop through each argument and see if they're called via args that has a debug declare
+        for (auto function_use = function->use_begin(); function_use != function->use_end();
+             function_use++) {
+            if (auto *func_call = llvm::dyn_cast<llvm::CallInst>(*function_use)) {
+                // find all the values that's indexed in the call arg declare
+                std::unordered_map<const llvm::Value *, const llvm::CallInst *> debug_instructions;
+                auto const *parent_block = func_call->getParent();
+                for (auto const &instr : *parent_block) {
+                    if (llvm::isa<llvm::CallInst>(instr)) {
+                        auto const &call_instr = llvm::cast<llvm::CallInst>(instr);
+                        if (call_instr.getCalledFunction()->getName() == "llvm.dbg.declare") {
+                            // we found it
+                            auto *value =
+                                llvm::cast<llvm::MDNode>(call_instr.getOperand(0))->getOperand(0);
+                            debug_instructions.emplace(value, &call_instr);
+                        }
+                    }
+                }
+                auto const &args = function->getArgumentList();
+                for (auto arg_idx = 0u; arg_idx < args.size(); arg_idx++) {
+                    auto const *called_arg = func_call->getArgOperand(arg_idx);
+                    if (debug_instructions.find(called_arg) != debug_instructions.end()) {
+                        auto *call_instr = debug_instructions.at(called_arg);
+                        auto &context = *root_scope->context;
+                        // find parent
+                        ModuleInfo *mod = nullptr;
+                        for (auto const &[name, m] : context.module_infos()) {
+                            for (auto const &[i, def] : m->instances) {
+                                if (def.get() == root_scope->module) {
+                                    mod = m.get();
+                                    break;
+                                }
+                            }
+                            if (mod) break;
+                        }
+
+                        if (!mod)
+                            throw std::runtime_error(
+                                "Unable to find parent module to infer function arg");
+                        // notice that we assume this variable hasn't been handled yet. this is
+                        // subject to change if Vitis decodes to include debugging information
+                        process_var_decl(*call_instr, context, root_scope, context.rtl_info(), mod);
+                    }
+                }
+            }
+        }
     }
 }
 

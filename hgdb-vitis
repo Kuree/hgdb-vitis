@@ -140,6 +140,7 @@ class DesignInfo:
             scope.bind_state(module)
             module_scopes[module_name] = scope
 
+        vitis.infer_function_arg(self.__o3_bc, module_scopes)
         module_scopes = vitis.reorganize_scopes(self.__o3_bc, self.scope_info, module_scopes)
         vitis.infer_dangling_scope_state(module_scopes)
 

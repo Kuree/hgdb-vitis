@@ -223,4 +223,6 @@ std::map<std::string, Scope *> reorganize_scopes(
 
 void infer_dangling_scope_state(const std::map<std::string, Scope *> &scopes);
 
+void infer_function_arg(const llvm::Module *module, const std::map<std::string, Scope *> &scopes);
+
 #endif  // HGDB_VITIS_IR_HH

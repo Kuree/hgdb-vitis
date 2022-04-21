@@ -73,6 +73,7 @@ void bind_scope(py::module &m) {
 
     m.def("reorganize_scopes", reorganize_scopes);
     m.def("infer_dangling_scope_state", infer_dangling_scope_state);
+    m.def("infer_function_arg", infer_function_arg);
 }
 
 PYBIND11_MODULE(vitis, m) {
