@@ -1,6 +1,7 @@
 #include <filesystem>
 
 #include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IRReader/IRReader.h"
@@ -63,6 +64,74 @@ PYBIND11_MODULE(vitis0, m) {
                 res[resolved_filename][function_name] = std::make_pair(min, max);
             }
         }
+        return res;
+    });
+
+    m.def("get_function_args", [](const std::string &filename) {
+        llvm::SMDiagnostic error;
+        auto module = llvm::parseIRFile(filename, error, *get_llvm_context());
+        std::map<std::string, std::vector<std::tuple<std::string, uint32_t, std::vector<uint32_t>>>>
+            res;
+        if (!module) return res;
+
+        for (auto const &func : *module) {
+            auto func_name = func.getName().str();
+            uint32_t arg_idx = 0;
+            for (auto const &arg : func.args()) {
+                arg_idx++;
+                // for now, we are only interested in buffers, whose names typically disappears
+                // after the optimization and lowering
+                // 1. find store, which will be used for debug declare
+                const llvm::CallInst *debug_call = nullptr;
+                for (auto const &use : arg.users()) {
+                    if (auto store = llvm::dyn_cast<llvm::StoreInst>(use)) {
+                        // find debug call
+                        auto *store_dst = store->getPointerOperand();
+                        if (!store_dst) continue;
+                        for (auto const &use2 : store_dst->users()) {
+                            if (auto call = llvm::dyn_cast<llvm::CallInst>(use2)) {
+                                if (call->getCalledFunction()->getName() == "llvm.dbg.declare") {
+                                    debug_call = call;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (debug_call) break;
+                }
+
+                if (!debug_call) continue;
+                auto *op = debug_call->getOperand(1);
+                // notice the version difference
+                // newer LLVM doesn't allow value directly cast to metadata anymore
+                auto *md = llvm::ValueAsMetadata::get(op);
+                if (!md) continue;
+                auto local_var = llvm::dyn_cast<llvm::DILocalVariable>(md);
+                if (!local_var) continue;
+                auto name = local_var->getName().str();
+                auto *t = local_var->getType();
+                if (!t) continue;
+                auto derived_type = llvm::dyn_cast<llvm::DIDerivedType>(t);
+                if (!derived_type) continue;
+                auto base_type = derived_type->getBaseType();
+                auto composite = llvm::dyn_cast<llvm::DICompositeType>(base_type);
+                // we only deal with multi-dim array for now
+                if (!composite) continue;
+                auto elements = composite->getElements();
+                std::vector<uint32_t> entry;
+                for (auto const &a : elements) {
+                    auto sub = llvm::dyn_cast<llvm::DISubrange>(a);
+                    if (!sub) continue;
+                    auto count = sub->getCount().get<llvm::ConstantInt *>();
+                    if (!count) continue;
+                    entry.emplace_back(count->getLimitedValue());
+                }
+                // do we need to worry about the lower dim?
+                // or we assume vitis is going to use reg file/SRAM instead?
+                res[func_name].emplace_back(std::make_tuple(name, arg_idx - 1, entry));
+            }
+        }
+
         return res;
     });
 }

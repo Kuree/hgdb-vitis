@@ -43,6 +43,7 @@ class DesignInfo:
         g_filename = os.path.join(self.__solution, ".autopilot", "db", self.top_name + ".bc")
         assert os.path.exists(g_filename), "Debug bitcode not found at " + g_filename
         self.scope_info = vitis0.get_function_scopes(g_filename)
+        self.function_arg_info = vitis0.get_function_args(g_filename)
 
     def __build_instance_hierarchy(self, parent_name, node):
         inst_list = node.find("InstancesList")
