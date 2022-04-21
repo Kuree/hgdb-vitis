@@ -42,7 +42,7 @@ optional arguments:
 ```
 
 Notice that solution folder is the folder under the project folder. Typically, it follows the pattern of
-`solution#`, where `#` is a number.
+`solution#`, where `#` is a number. Your solution also need to have `config_debug` enabled.
 
 ## Caveat
 `hgdb-vitis` tries its best to discover symbol definition and match it with the RTL signals. In fact, it parses
