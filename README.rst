@@ -10,32 +10,35 @@ How to build
 You need a C++17 compatible compiler as well as a recent llvm
 development library. On Ubuntu, you can install llvm via
 
-.. code:: bash
+.. code::
 
    sudo apt install llvm-dev
 
 You also need to clone the submodules via
 
-.. code:: bash
+.. code::
 
    git submodule update --init --recursive
 
 After that, install the python package via
 
-.. code:: bash
+.. code::
 
    pip install -e .
 
-Once installed, you will find ``hgdb-vitis`` in the binary. It may take
-a while to install.
+Once ``hgdb-vitis`` is installed, you will find ``hgdb-vitis``
+in the ``$PATH``. It's recommended to use a virtualenv. It may take
+a while to install since it's building a full-fledged SystemVerilog parser.
 
 How to use
 ----------
 
 ``hgdb-vitis`` follows the standard command line arguments. Notice that
-it supports path mapping on the client side.
+it supports path mapping on the client side (you can also use ``hgdb``'s
+path remapping in the debug configuration). The syntax is
+``[src_path]:[dst_path]``; use ``;`` to separate multiple paths.
 
-.. code:: bash
+.. code::
 
    usage: hgdb-vitis [-h] [-o OUTPUT] [-r REMAP] solution
 
@@ -47,9 +50,9 @@ it supports path mapping on the client side.
      -o OUTPUT             Output symbol table name
      -r REMAP, --remap REMAP
 
-Notice that solution folder is the folder under the project folder.
+Notice that the solution folder is the folder under the project folder.
 Typically, it follows the pattern of ``solution#``, where ``#`` is a
-number. Your solution also need to have ``config_debug`` enabled.
+number. Your solution also needs to have ``config_debug`` enabled.
 
 Caveat
 ------
@@ -59,8 +62,8 @@ with the RTL signals. In fact, it parses the generated RTL to discover
 RTL signal definition. A list of heuristics is used to reverse the HLS
 transformation as much as possible, you can see the notes `here`_.
 However, due to limited symbol information produced by Vitis, the
-ability to debug using the C++ source variable name is still limited. If
-you have any idea of how to improve ``hgdb-vitis``, feel free to file an
+ability to debug using the C++ source variable name is still unsatisfactory.
+If you have any idea of improving ``hgdb-vitis``, feel free to file an
 issue.
 
 .. _here: https://github.com/Kuree/hgdb-vitis/blob/master/notes.md
