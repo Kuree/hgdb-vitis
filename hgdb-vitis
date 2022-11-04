@@ -40,10 +40,22 @@ class DesignInfo:
         self.__build_instance_hierarchy(top_module_name, top_module)
 
     def __parse_debug_bc(self):
-        g_filename = os.path.join(self.__solution, ".autopilot", "db", self.top_name + ".bc")
-        assert os.path.exists(g_filename), "Debug bitcode not found at " + g_filename
-        self.scope_info = vitis0.get_function_scopes(g_filename)
-        self.function_arg_info = vitis0.get_function_args(g_filename)
+        # need to index all the debug information in the folder
+        bc_files = list(pathlib.Path(os.path.join(self.__solution, ".autopilot", "db")).rglob("*.bc"))
+        # filter out unnecessary builds
+        debug_bcs = []
+        for f in bc_files:
+            f = str(f)
+            names = {"apatb_", "a.o.", ".g.", "a.pp."}
+            found = False
+            for n in names:
+                if n in f:
+                    found = True
+                    break
+            if not found:
+                debug_bcs.append(f)
+        self.scope_info = vitis0.get_function_scopes(debug_bcs)
+        self.function_arg_info = vitis0.get_function_args(debug_bcs)
 
     def __build_instance_hierarchy(self, parent_name, node):
         inst_list = node.find("InstancesList")
