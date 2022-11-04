@@ -25,6 +25,26 @@ std::string resolve_filename(const std::string &filename, const std::string &dir
     return res.string();
 }
 
+std::unordered_map<const llvm::Value *, const llvm::CallInst *> index_debug_declare(
+    const llvm::Function *function) {
+    std::unordered_map<const llvm::Value *, const llvm::CallInst *> res;
+    for (auto const &blk : *function) {
+        for (auto const &instr : blk) {
+            if (llvm::isa<llvm::CallInst>(instr)) {
+                auto const &call = llvm::cast<llvm::CallInst>(instr);
+                if (auto const *func = call.getCalledFunction()) {
+                    if (func->getName() == "llvm.dbg.declare") {
+                        auto *md = llvm::ValueAsMetadata::get(call.getOperand(0));
+                        auto *v = md->getValue();
+                        res.emplace(v, &call);
+                    }
+                }
+            }
+        }
+    }
+    return res;
+}
+
 // because the optimized build has all the function scopes messed up, we need to extract out
 // proper scopes from the debug build then use the source location to reconstruct the scopes
 
