@@ -1,6 +1,6 @@
 add_library(hgdb-vitis ir.cc)
-target_include_directories(hgdb-vitis PUBLIC ${LLVM0_INCLUDE_DIRS} ../extern/slang/include)
-target_link_libraries(hgdb-vitis PUBLIC llvm::bitcode llvm::core llvm::support llvm::analysis llvm::bitcode)
+target_include_directories(hgdb-vitis PUBLIC ${LLVM3_INCLUDE_DIRS} ../extern/slang/include)
+target_link_libraries(hgdb-vitis PUBLIC llvm3::bitcode llvm3::core llvm3::support llvm3::analysis llvm3::bitcode)
 set_property(TARGET hgdb-vitis PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_compile_options(hgdb-vitis PRIVATE -Wall -Wextra -Wpedantic -Werror -Wno-unused-parameter -Wno-deprecated-copy
         -Wno-unused-local-typedefs)
@@ -18,6 +18,6 @@ target_link_libraries(vitis_rtl PUBLIC slangcompiler)
 
 pybind11_add_module(vitis0 debug.cc)
 set_property(TARGET vitis0 PROPERTY POSITION_INDEPENDENT_CODE ON)
-llvm_map_components_to_libnames(llvm_libs support core irreader)
-target_link_libraries(vitis0 PUBLIC ${llvm_libs})
-target_include_directories(vitis0 PRIVATE ${LLVM_INCLUDE_DIRS})
+target_link_libraries(vitis0 PUBLIC llvm10::bitcode llvm10::core llvm10::analysis llvm10::support llvm10::bitcode -lrt -ldl -ltinfo -lpthread -lm)
+target_include_directories(vitis0 PRIVATE ${LLVM10_INCLUDE_DIRS})
+target_compile_definitions(vitis0 PUBLIC -DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1)
