@@ -39,13 +39,13 @@ class CMakeBuild(build_ext):
         root_dir = os.path.dirname(__file__)
         llvm3_dir = os.path.join(root_dir, "llvm3")
         if not os.path.exists(llvm3_dir):
-            subprocess.call(["wget", LLVM3_URL], cwd=root_dir)
+            subprocess.call(["wget", "-q", LLVM3_URL], cwd=root_dir)
             subprocess.call(["tar", "xzf", f"{LLVM3_NAME}.tar.gz"], cwd=root_dir)
             os.remove(f"{LLVM3_NAME}.tar.gz")
-            subprocess.call(["mv", LLVM3_NAME, "llvm10"], cwd=root_dir)
+            subprocess.call(["mv", LLVM3_NAME, "llvm3"], cwd=root_dir)
         llvm10_dir = os.path.join(root_dir, "llvm10")
         if not os.path.exists(llvm10_dir):
-            subprocess.call(["wget", LLVM10_URL], cwd=root_dir)
+            subprocess.call(["wget", "-q",LLVM10_URL], cwd=root_dir)
             subprocess.call(["tar", "xf", f"{LLVM10_NAME}.tar.xz"], cwd=root_dir)
             os.remove(f"{LLVM10_NAME}.tar.xz")
             subprocess.call(["mv", LLVM10_NAME, "llvm10"], cwd=root_dir)

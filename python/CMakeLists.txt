@@ -18,6 +18,6 @@ target_link_libraries(vitis_rtl PUBLIC slangcompiler)
 
 pybind11_add_module(vitis0 debug.cc)
 set_property(TARGET vitis0 PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_link_libraries(vitis0 PUBLIC llvm10::bitcode llvm10::core llvm10::analysis llvm10::support llvm10::bitcode -lrt -ldl -ltinfo -lpthread -lm)
+target_link_libraries(vitis0 PUBLIC llvm10::core)
 target_include_directories(vitis0 PRIVATE ${LLVM10_INCLUDE_DIRS})
 target_compile_definitions(vitis0 PUBLIC -DLLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1)
