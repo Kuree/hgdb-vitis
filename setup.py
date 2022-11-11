@@ -5,8 +5,10 @@ import os
 import sys
 import multiprocessing
 
-LLVM_NAME = "clang+llvm-3.1-x86_64-linux-ubuntu_12.04"
-LLVM_URL = f"https://releases.llvm.org/3.1/{LLVM_NAME}.tar.gz"
+LLVM3_NAME = "clang+llvm-3.1-x86_64-linux-ubuntu_12.04"
+LLVM3_URL = f"https://releases.llvm.org/3.1/{LLVM3_NAME}.tar.gz"
+LLVM10_NAME = "clang+llvm-10.0.0-x86_64-linux-gnu-ubuntu-18.04"
+LLVM10_URL = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.0/{LLVM10_NAME}.tar.xz"
 
 
 class CMakeExtension(Extension):
@@ -35,11 +37,18 @@ class CMakeBuild(build_ext):
 
         # llvm directory
         root_dir = os.path.dirname(__file__)
-        llvm_dir = os.path.join(root_dir, "llvm")
-        if not os.path.exists(llvm_dir):
-            subprocess.call(["wget", LLVM_URL], cwd=root_dir)
-            subprocess.call(["tar", "xzf", f"{LLVM_NAME}.tar.gz"], cwd=root_dir)
-            subprocess.call(["mv", LLVM_NAME, "llvm"], cwd=root_dir)
+        llvm3_dir = os.path.join(root_dir, "llvm3")
+        if not os.path.exists(llvm3_dir):
+            subprocess.call(["wget", LLVM3_URL], cwd=root_dir)
+            subprocess.call(["tar", "xzf", f"{LLVM3_NAME}.tar.gz"], cwd=root_dir)
+            os.remove(f"{LLVM3_NAME}.tar.gz")
+            subprocess.call(["mv", LLVM3_NAME, "llvm10"], cwd=root_dir)
+        llvm10_dir = os.path.join(root_dir, "llvm10")
+        if not os.path.exists(llvm10_dir):
+            subprocess.call(["wget", LLVM10_URL], cwd=root_dir)
+            subprocess.call(["tar", "xf", f"{LLVM10_NAME}.tar.xz"], cwd=root_dir)
+            os.remove(f"{LLVM10_NAME}.tar.xz")
+            subprocess.call(["mv", LLVM10_NAME, "llvm10"], cwd=root_dir)
 
         # test env variable to determine whether to build in debug
         if os.environ.get("DEBUG") is not None:
@@ -82,9 +91,6 @@ setup(
     long_description=long_description,
     long_description_content_type='text/x-rst',
     url="https://github.com/Kuree/hgdb-vitis",
-    install_requires=[
-        "llvmlite",
-    ],
     scripts=["hgdb-vitis"],
     python_requires=">=3.6",
     cmdclass={"build_ext": CMakeBuild},
