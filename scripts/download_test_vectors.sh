@@ -7,7 +7,7 @@ TEST_VECTOR="${ROOT}"/tests/vectors
 
 mkdir -p "${TEST_VECTOR}"
 
-for test in dct dct-pipelined; do
+for test in dct dct-pipelined ex1; do
   echo "${test}"
   if [ ! -d "${TEST_VECTOR}"/${test} ]; then
     wget https://github.com/Kuree/files/raw/master/vectors/hls/${test}.tar.gz
