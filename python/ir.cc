@@ -1149,6 +1149,19 @@ void infer_function_arg(const llvm::Module *module, const std::map<std::string, 
     }
 }
 
+void inject_function_args(
+    const std::unordered_map<std::string, uint32_t> &signals, const std::string &module_name,
+    Scope &scope,
+    const std::vector<std::tuple<std::string, uint32_t, std::vector<uint32_t>>> &var_infos) {
+    for (auto const &[name, line, vars] : var_infos) {
+        if (!vars.empty()) continue;
+        // for now, we're only interested in scalar values
+        if (signals.find(name) == signals.end()) continue;
+        Variable v{name, name};
+        scope.context->add_scope<DeclInstruction>(&scope, v, line);
+    }
+}
+
 void ModuleInfo::add_instance(const std::string &m_name, const std::string &instance_name) {
     if (!context->has_module(m_name)) {
         auto ptr = std::make_shared<ModuleInfo>(m_name);

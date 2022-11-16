@@ -225,4 +225,8 @@ void infer_dangling_scope_state(const std::map<std::string, Scope *> &scopes);
 
 void infer_function_arg(const llvm::Module *module, const std::map<std::string, Scope *> &scopes);
 
+void inject_function_args(
+    const std::unordered_map<std::string, uint32_t> &signals, const std::string &module_name, Scope &scope,
+    const std::vector<std::tuple<std::string, uint32_t, std::vector<uint32_t>>> &var_infos);
+
 #endif  // HGDB_VITIS_IR_HH

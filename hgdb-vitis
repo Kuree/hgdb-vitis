@@ -139,6 +139,12 @@ class DesignInfo:
         self.__rtl_info = vitis_rtl.parse_verilog(files, self.top_name)
         self.__context.set_rtl_info(self.__rtl_info.signals, self.__rtl_info.instances)
 
+    def __inject_func_args(self, module_scopes):
+        for func_name, values in self.function_arg_info.items():
+            if func_name not in module_scopes or func_name not in self.__rtl_info.signals:
+                continue
+            vitis.inject_function_args(self.__rtl_info.signals[func_name], func_name, module_scopes[func_name], values)
+
     def dump_symbol_table(self, output, remap):
         options = vitis.SerializationOptions()
         for b, a in remap.items():
@@ -156,6 +162,7 @@ class DesignInfo:
         vitis.infer_function_arg(self.__o3_bc, module_scopes)
         module_scopes = vitis.reorganize_scopes(self.__o3_bc, self.scope_info, module_scopes)
         vitis.infer_dangling_scope_state(module_scopes)
+        self.__inject_func_args(module_scopes)
 
         for module_name, scope in module_scopes.items():
             tables[module_name] = scope.serialize(options)

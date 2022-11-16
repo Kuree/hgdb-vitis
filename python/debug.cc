@@ -6,6 +6,8 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Transforms/Utils/Local.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "pybind11/pybind11.h"
 #include "pybind11/stl.h"
 
@@ -100,60 +102,44 @@ PYBIND11_MODULE(vitis0, m) {
 
             for (auto const &func : *module) {
                 auto func_name = func.getName().str();
-                uint32_t arg_idx = 0;
                 for (auto const &arg : func.args()) {
-                    arg_idx++;
-                    // for now, we are only interested in buffers, whose names typically disappears
-                    // after the optimization and lowering
-                    // 1. find store, which will be used for debug declare
-                    const llvm::CallInst *debug_call = nullptr;
-                    for (auto const &use : arg.users()) {
+                    llvm::SmallVector<llvm::DbgVariableIntrinsic *, 1> debug_values;
+                    for (auto use : arg.users()) {
                         if (auto store = llvm::dyn_cast<llvm::StoreInst>(use)) {
                             // find debug call
                             auto *store_dst = store->getPointerOperand();
                             if (!store_dst) continue;
-                            for (auto const &use2 : store_dst->users()) {
-                                if (auto call = llvm::dyn_cast<llvm::CallInst>(use2)) {
-                                    if (call->getCalledFunction()->getName() ==
-                                        "llvm.dbg.declare") {
-                                        debug_call = call;
-                                        break;
-                                    }
-                                }
-                            }
+                            llvm::findDbgUsers(debug_values, const_cast<llvm::Value *>(store_dst));
                         }
-                        if (debug_call) break;
                     }
-
-                    if (!debug_call) continue;
-                    auto *op = debug_call->getOperand(1);
-                    // notice the version difference
-                    // newer LLVM doesn't allow value directly cast to metadata anymore
-                    auto *md = llvm::ValueAsMetadata::get(op);
-                    if (!md) continue;
-                    auto local_var = llvm::dyn_cast<llvm::DILocalVariable>(md);
+                    if (debug_values.empty()) continue;
+                    auto local_var = debug_values[0]->getVariable();
                     if (!local_var) continue;
                     auto name = local_var->getName().str();
+                    auto line = local_var->getLine();
                     auto *t = local_var->getType();
                     if (!t) continue;
-                    auto derived_type = llvm::dyn_cast<llvm::DIDerivedType>(t);
-                    if (!derived_type) continue;
-                    auto base_type = derived_type->getBaseType();
-                    auto composite = llvm::dyn_cast<llvm::DICompositeType>(base_type);
-                    // we only deal with multi-dim array for now
-                    if (!composite) continue;
-                    auto elements = composite->getElements();
                     std::vector<uint32_t> entry;
-                    for (auto const &a : elements) {
-                        auto sub = llvm::dyn_cast<llvm::DISubrange>(a);
-                        if (!sub) continue;
-                        auto count = sub->getCount().get<llvm::ConstantInt *>();
-                        if (!count) continue;
-                        entry.emplace_back(count->getLimitedValue());
+                    if (llvm::isa<llvm::DIBasicType>(t)) {
+                        // for basic type we directly store them
+                        res[func_name].emplace_back(std::make_tuple(name, line, entry));
+                    } else if (auto derived_type = llvm::dyn_cast<llvm::DIDerivedType>(t)) {
+                        auto base_type = derived_type->getBaseType();
+                        if (auto composite = llvm::dyn_cast<llvm::DICompositeType>(base_type)) {
+                            // we only deal with multi-dim array for now
+                            auto elements = composite->getElements();
+                            for (auto const &a : elements) {
+                                auto sub = llvm::dyn_cast<llvm::DISubrange>(a);
+                                if (!sub) continue;
+                                auto count = sub->getCount().get<llvm::ConstantInt *>();
+                                if (!count) continue;
+                                entry.emplace_back(count->getLimitedValue());
+                            }
+                            // do we need to worry about the lower dim?
+                            // or we assume vitis is going to use reg file/SRAM instead?
+                            res[func_name].emplace_back(std::make_tuple(name, line, entry));
+                        }
                     }
-                    // do we need to worry about the lower dim?
-                    // or we assume vitis is going to use reg file/SRAM instead?
-                    res[func_name].emplace_back(std::make_tuple(name, arg_idx - 1, entry));
                 }
             }
         }
