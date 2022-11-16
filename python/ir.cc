@@ -1158,7 +1158,12 @@ void inject_function_args(
         // for now, we're only interested in scalar values
         if (signals.find(name) == signals.end()) continue;
         Variable v{name, name};
-        scope.context->add_scope<DeclInstruction>(&scope, v, line);
+        // if the parent only has one scope, add declare scope to the only child
+        auto *target_scope = &scope;
+        if (scope.scopes.size() == 1) {
+            target_scope = scope.scopes[0];
+        }
+        scope.context->add_scope<DeclInstruction>(target_scope, v, line);
     }
 }
 
